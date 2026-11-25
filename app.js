@@ -1,28 +1,28 @@
 ﻿/* =====================================================================
-   app.js — Okuyorum ana mantık
-   Bölümler:
+   app.js â€” Okuyorum ana mantÄ±k
+   BÃ¶lÃ¼mler:
      1) Ayarlar ve durum (localStorage)
-     2) Yardımcılar (metin temizleme, Levenshtein, hece bölme)
-     3) Havuz oluşturma (seçili harflere göre hece/kelime/cümle)
-     4) Ekran gösterimi ve seslendirme (speechSynthesis)
-     5) Kontrol modu 1: Web Speech API (anahtarsız)
-     6) Kontrol modu 2: Gemini (yapay zekâ)
-     7) Sonuç, konfeti, harf seçici, ebeveyn paneli, PWA
+     2) YardÄ±mcÄ±lar (metin temizleme, Levenshtein, hece bÃ¶lme)
+     3) Havuz oluÅŸturma (seÃ§ili harflere gÃ¶re hece/kelime/cÃ¼mle)
+     4) Ekran gÃ¶sterimi ve seslendirme (speechSynthesis)
+     5) Kontrol modu 1: Web Speech API (anahtarsÄ±z)
+     6) Kontrol modu 2: Gemini (yapay zekÃ¢)
+     7) SonuÃ§, konfeti, harf seÃ§ici, ebeveyn paneli, PWA
    ===================================================================== */
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-// Denenecek Gemini modelleri (ilk sıradaki öncelikli; hata olursa sıradakine geçilir).
-// Bir model kapatılırsa buraya yenisini ekleyin.
+// Denenecek Gemini modelleri (ilk sÄ±radaki Ã¶ncelikli; hata olursa sÄ±radakine geÃ§ilir).
+// Bir model kapatÄ±lÄ±rsa buraya yenisini ekleyin.
 const GEMINI_TIMEOUT_MS = 12000;   // Bir model en fazla bu kadar beklenir
 const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"];
-const MAX_RECORD_MS = 6000;                // Yapay zekâ modunda en fazla kayıt süresi
-const PASS_RATIO = 0.75;                   // Levenshtein benzerlik eşiği
-const ROUND_SIZE = 10;                     // Her 10 doğru cevap = 1 tur
-// Test için ekranın en üstünde gösterilir. Her güncellemede artırın.
-const APP_VERSION = "v10";
-// GEÇİCİ test: yapay zekâ cevap verdiğinde mesajın başına eklenir (hem yazılır hem söylenir).
-// Kaldırmak için "" yapın.
+const MAX_RECORD_MS = 6000;                // Yapay zekÃ¢ modunda en fazla kayÄ±t sÃ¼resi
+const PASS_RATIO = 0.75;                   // Levenshtein benzerlik eÅŸiÄŸi
+const ROUND_SIZE = 10;                     // Her 10 doÄŸru cevap = 1 tur
+// Test iÃ§in ekranÄ±n en Ã¼stÃ¼nde gÃ¶sterilir. Her gÃ¼ncellemede artÄ±rÄ±n.
+const APP_VERSION = "v11";
+// GEÃ‡Ä°CÄ° test: yapay zekÃ¢ cevap verdiÄŸinde mesajÄ±n baÅŸÄ±na eklenir (hem yazÄ±lÄ±r hem sÃ¶ylenir).
+// KaldÄ±rmak iÃ§in "" yapÄ±n.
 const AI_DEBUG_PREFIX = "Google: ";
 
 const LS = {
@@ -33,7 +33,7 @@ const LS = {
 };
 const $ = (id) => document.getElementById(id);
 
-// Kalıcı durum: puan, seçili harf sayısı, seviye, seviye başına doğru sayısı
+// KalÄ±cÄ± durum: puan, seÃ§ili harf sayÄ±sÄ±, seviye, seviye baÅŸÄ±na doÄŸru sayÄ±sÄ±
 let state = Object.assign(
   { score: 0, letterCount: 0, level: 1, correct: { 1: 0, 2: 0, 3: 0 } },
   safeParse(localStorage.getItem(LS.state))
@@ -41,7 +41,7 @@ let state = Object.assign(
 function saveState() { localStorage.setItem(LS.state, JSON.stringify(state)); }
 function safeParse(s) { try { return JSON.parse(s) || {}; } catch (e) { return {}; } }
 
-// Harf sırası: ebeveynin kaydettiği varsa o, yoksa words.js'teki varsayılan
+// Harf sÄ±rasÄ±: ebeveynin kaydettiÄŸi varsa o, yoksa words.js'teki varsayÄ±lan
 function getOrder() {
   const saved = localStorage.getItem(LS.order);
   if (saved) {
@@ -50,28 +50,28 @@ function getOrder() {
   }
   return LETTER_ORDER;
 }
-// "e l a, k" → ["E","L","A","K"]  (Türkçe büyük harf, tekrarsız)
+// "e l a, k" â†’ ["E","L","A","K"]  (TÃ¼rkÃ§e bÃ¼yÃ¼k harf, tekrarsÄ±z)
 function parseOrder(text) {
   const out = [];
   for (const ch of text.toLocaleUpperCase("tr-TR")) {
-    if (/[A-ZÇĞİÖŞÜ]/.test(ch) && !out.includes(ch)) out.push(ch);
+    if (/[A-ZÃ‡ÄÄ°Ã–ÅÃœ]/.test(ch) && !out.includes(ch)) out.push(ch);
   }
   return out;
 }
 
 let order = getOrder();
-let current = null;        // Şu an ekrandaki öğe {text, emoji, kind}
-let recentIds = [];        // Tekrarı azaltmak için son gösterilenler
-let busy = false;          // Kayıt/değerlendirme sürerken true
+let current = null;        // Åu an ekrandaki Ã¶ÄŸe {text, emoji, kind}
+let recentIds = [];        // TekrarÄ± azaltmak iÃ§in son gÃ¶sterilenler
+let busy = false;          // KayÄ±t/deÄŸerlendirme sÃ¼rerken true
 
 /* ---------- 2) YARDIMCILAR ---------- */
 
-// Karşılaştırma için: Türkçe küçük harf + noktalama/boşluk temizliği
+// KarÅŸÄ±laÅŸtÄ±rma iÃ§in: TÃ¼rkÃ§e kÃ¼Ã§Ã¼k harf + noktalama/boÅŸluk temizliÄŸi
 function clean(s) {
-  return s.toLocaleLowerCase("tr-TR").replace(/[^a-zçğıöşüâîû]/g, "");
+  return s.toLocaleLowerCase("tr-TR").replace(/[^a-zÃ§ÄŸÄ±Ã¶ÅŸÃ¼Ã¢Ã®Ã»]/g, "");
 }
 
-// Levenshtein benzerliği (0..1)
+// Levenshtein benzerliÄŸi (0..1)
 function similarity(a, b) {
   const d = editMatrix(a, b);
   return 1 - d[a.length][b.length] / Math.max(a.length, b.length, 1);
@@ -85,25 +85,25 @@ function editMatrix(a, b) {
   return m;
 }
 
-// Hedefte hangi sesin (harfin) atlandığını/yanlış söylendiğini bulur.
-// Düzenleme matrisinde geri izleme yaparak hedef harflerden ilk hatalıyı döndürür.
+// Hedefte hangi sesin (harfin) atlandÄ±ÄŸÄ±nÄ±/yanlÄ±ÅŸ sÃ¶ylendiÄŸini bulur.
+// DÃ¼zenleme matrisinde geri izleme yaparak hedef harflerden ilk hatalÄ±yÄ± dÃ¶ndÃ¼rÃ¼r.
 function findMissingLetter(target, heard) {
   const m = editMatrix(target, heard);
   let i = target.length, j = heard.length;
   const bad = [];
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && m[i][j] === m[i - 1][j - 1] + (target[i - 1] === heard[j - 1] ? 0 : 1)) {
-      if (target[i - 1] !== heard[j - 1]) bad.push(i - 1);   // yanlış söylenen harf
+      if (target[i - 1] !== heard[j - 1]) bad.push(i - 1);   // yanlÄ±ÅŸ sÃ¶ylenen harf
       i--; j--;
     } else if (i > 0 && m[i][j] === m[i - 1][j] + 1) {
       bad.push(i - 1); i--;                                    // atlanan harf
-    } else { j--; }                                            // fazladan söylenen
+    } else { j--; }                                            // fazladan sÃ¶ylenen
   }
   if (!bad.length) return null;
   return target[Math.min(...bad)].toLocaleUpperCase("tr-TR");
 }
 
-// Türkçe hece bölme (hece sayısı = ünlü sayısı)
+// TÃ¼rkÃ§e hece bÃ¶lme (hece sayÄ±sÄ± = Ã¼nlÃ¼ sayÄ±sÄ±)
 function syllabify(word) {
   const chars = [...word];
   const v = [];
@@ -111,7 +111,7 @@ function syllabify(word) {
   if (v.length < 2) return [word];
   const cuts = [];
   for (let k = 0; k < v.length - 1; k++) {
-    const gap = v[k + 1] - v[k] - 1;            // iki ünlü arasındaki ünsüz sayısı
+    const gap = v[k + 1] - v[k] - 1;            // iki Ã¼nlÃ¼ arasÄ±ndaki Ã¼nsÃ¼z sayÄ±sÄ±
     cuts.push(gap === 0 ? v[k + 1] : gap === 1 ? v[k + 1] - 1 : v[k] + 2);
   }
   const parts = [];
@@ -121,26 +121,26 @@ function syllabify(word) {
   return parts;
 }
 
-/* ---------- 3) HAVUZ OLUŞTURMA ---------- */
+/* ---------- 3) HAVUZ OLUÅTURMA ---------- */
 
 function selectedLetters() { return new Set(order.slice(0, state.letterCount)); }
 
-// Metin yalnızca seçili harflerden mi oluşuyor? (boşluk/noktalama yok sayılır)
+// Metin yalnÄ±zca seÃ§ili harflerden mi oluÅŸuyor? (boÅŸluk/noktalama yok sayÄ±lÄ±r)
 function usesOnly(text, set) {
   for (const ch of text) {
-    if (/[A-ZÇĞİÖŞÜ]/.test(ch) && !set.has(ch)) return false;
+    if (/[A-ZÃ‡ÄÄ°Ã–ÅÃœ]/.test(ch) && !set.has(ch)) return false;
   }
   return true;
 }
 
-// Seçili harflerle hece üret: ünsüz+ünlü (KA) ve ünlü+ünsüz (AK)
+// SeÃ§ili harflerle hece Ã¼ret: Ã¼nsÃ¼z+Ã¼nlÃ¼ (KA) ve Ã¼nlÃ¼+Ã¼nsÃ¼z (AK)
 function buildSyllables(set) {
   const vs = [...set].filter((l) => VOWELS.includes(l));
   const cs = [...set].filter((l) => !VOWELS.includes(l));
   const out = [];
   for (const c of cs) for (const v of vs) { out.push(c + v); out.push(v + c); }
-  if (!out.length) vs.forEach((v) => out.push(v));   // sadece ünlü seçiliyse harfin kendisi
-  return out.map((t) => ({ text: t, emoji: "🔤", kind: "syl" }));
+  if (!out.length) vs.forEach((v) => out.push(v));   // sadece Ã¼nlÃ¼ seÃ§iliyse harfin kendisi
+  return out.map((t) => ({ text: t, emoji: "ğŸ”¤", kind: "syl" }));
 }
 
 function buildPool(level) {
@@ -155,15 +155,15 @@ function buildPool(level) {
     .map(([s, e]) => ({ text: s, emoji: e, kind: "sentence" }));
 }
 
-// Rastgele seç: son öğrenilen 2 harfi içerenlere öncelik ver, son 5 öğeyi tekrar etme
+// Rastgele seÃ§: son Ã¶ÄŸrenilen 2 harfi iÃ§erenlere Ã¶ncelik ver, son 5 Ã¶ÄŸeyi tekrar etme
 function pickNext() {
   let level = state.level;
   let pool = buildPool(level);
   let note = "";
-  if (!pool.length) {            // Bu harflerle içerik yoksa heceye düş
+  if (!pool.length) {            // Bu harflerle iÃ§erik yoksa heceye dÃ¼ÅŸ
     pool = buildPool(1);
-    if (level !== 1) note = "Bu harflerle henüz " + (level === 2 ? "kelime" : "cümle") +
-      " yok. Hece çalışalım! 🙂";
+    if (level !== 1) note = "Bu harflerle henÃ¼z " + (level === 2 ? "kelime" : "cÃ¼mle") +
+      " yok. Hece Ã§alÄ±ÅŸalÄ±m! ğŸ™‚";
     level = 1;
   }
   const newest = order.slice(Math.max(0, state.letterCount - 2), state.letterCount);
@@ -177,7 +177,7 @@ function pickNext() {
   return { item, note };
 }
 
-/* ---------- 4) EKRAN VE SESLENDİRME ---------- */
+/* ---------- 4) EKRAN VE SESLENDÄ°RME ---------- */
 
 let trVoice = null;
 function loadVoice() {
@@ -190,7 +190,7 @@ if ("speechSynthesis" in window) {
   speechSynthesis.onvoiceschanged = loadVoice;
 }
 
-// Metni tr-TR sesiyle oku (rate: yavaş okuma için 0.6-0.8)
+// Metni tr-TR sesiyle oku (rate: yavaÅŸ okuma iÃ§in 0.6-0.8)
 function speak(text, rate = 0.8) {
   if (!("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
@@ -210,12 +210,12 @@ function setMsg(text, cls = "") {
 
 function showItem(item, note = "") {
   current = item;
-  $("emoji").textContent = "";   // Görsel, doğru okuyunca gösterilir (ipucu olmasın diye)
+  $("emoji").textContent = "";   // GÃ¶rsel, doÄŸru okuyunca gÃ¶sterilir (ipucu olmasÄ±n diye)
   const w = $("word");
   w.className = "word" + (item.kind === "sentence" ? " sentence" : "");
   w.innerHTML = "";
   if (item.kind === "word") {
-    // Heceleri farklı renklerle göster
+    // Heceleri farklÄ± renklerle gÃ¶ster
     syllabify(item.text).forEach((s, i) => {
       const span = document.createElement("span");
       span.className = "s" + (i % 3);
@@ -226,15 +226,15 @@ function showItem(item, note = "") {
     w.textContent = item.text;
   }
   w.classList.remove("bounce"); void w.offsetWidth; w.classList.add("bounce");
-  setMsg(note || (item.kind === "sentence" ? "Cümleyi oku!" : "Mikrofona bas ve oku!"));
+  setMsg(note || (item.kind === "sentence" ? "CÃ¼mleyi oku!" : "Mikrofona bas ve oku!"));
 }
 
-// Gösterim geçmişi: "Önceki" düğmesi için
+// GÃ¶sterim geÃ§miÅŸi: "Ã–nceki" dÃ¼ÄŸmesi iÃ§in
 let shownList = [], shownPos = -1;
 
 function nextItem() {
   stopAll();
-  if (shownPos < shownList.length - 1) {            // Geri gidilmişse önce geçmişte ileri git
+  if (shownPos < shownList.length - 1) {            // Geri gidilmiÅŸse Ã¶nce geÃ§miÅŸte ileri git
     shownPos++;
     showItem(shownList[shownPos]);
     return;
@@ -249,28 +249,28 @@ function nextItem() {
 function prevItem() {
   stopAll();
   if (shownPos > 0) { shownPos--; showItem(shownList[shownPos]); }
-  else setMsg("Bu ilk kelime 🙂");
+  else setMsg("Bu ilk kelime ğŸ™‚");
 }
 
-// Seviye seçildiğinde / yeniden başlandığında: geçmişi sıfırla, tamamen rastgele başla
+// Seviye seÃ§ildiÄŸinde / yeniden baÅŸlandÄ±ÄŸÄ±nda: geÃ§miÅŸi sÄ±fÄ±rla, tamamen rastgele baÅŸla
 function newSession() {
   shownList = []; shownPos = -1; recentIds = [];
   nextItem();
 }
 
-// Seslendirilecek metin: heceler/kelimeler küçük harfle (harf adı okunmasın diye)
+// Seslendirilecek metin: heceler/kelimeler kÃ¼Ã§Ã¼k harfle (harf adÄ± okunmasÄ±n diye)
 function spokenText(item) {
   return item.text.toLocaleLowerCase("tr-TR");
 }
 
 function renderHeader() {
-  $("score").textContent = "⭐ " + state.score;
+  $("score").textContent = "â­ " + state.score;
   document.querySelectorAll(".lvl").forEach((b) =>
     b.classList.toggle("active", Number(b.dataset.level) === state.level));
   $("bar").style.width = ((state.correct[state.level] % ROUND_SIZE) / ROUND_SIZE * 100) + "%";
 }
 
-/* ---------- 5) KONTROL MODU 1: Web Speech API (anahtarsız) ---------- */
+/* ---------- 5) KONTROL MODU 1: Web Speech API (anahtarsÄ±z) ---------- */
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
@@ -280,7 +280,7 @@ function setRecording(on) {
   busy = on;
   const b = $("mic");
   b.classList.toggle("rec", on);
-  b.textContent = on ? "⏹️ Bitir" : "🎤 Oku";
+  b.textContent = on ? "â¹ï¸ Bitir" : "ğŸ¤ Oku";
 }
 
 function stopAll() {
@@ -293,14 +293,14 @@ function stopAll() {
 }
 
 function noSupportMessage() {
-  setMsg("Bu tarayıcı konuşmayı anlayamıyor 😔 Lütfen Chrome kullan " +
-    "ya da ebeveynine Ayarlar'dan yapay zekâ anahtarı girmesini söyle.", "try");
+  setMsg("Bu tarayÄ±cÄ± konuÅŸmayÄ± anlayamÄ±yor ğŸ˜” LÃ¼tfen Chrome kullan " +
+    "ya da ebeveynine Ayarlar'dan yapay zekÃ¢ anahtarÄ± girmesini sÃ¶yle.", "try");
 }
 
-// Ses tanıma için "gevşek" biçim: tekrar eden harfleri tek say ("kaa" → "ka", "anne" → "ane")
+// Ses tanÄ±ma iÃ§in "gevÅŸek" biÃ§im: tekrar eden harfleri tek say ("kaa" â†’ "ka", "anne" â†’ "ane")
 function squeeze(s) { return s.replace(/(.)\1+/g, "$1"); }
 
-// attempt: sessizlik olursa kullanıcıya hissettirmeden otomatik yeniden dinleme sayısı
+// attempt: sessizlik olursa kullanÄ±cÄ±ya hissettirmeden otomatik yeniden dinleme sayÄ±sÄ±
 function basicCheck(prefix = "", attempt = 0) {
   if (!SR) { noSupportMessage(); return; }
   const target = squeeze(clean(current.text));
@@ -308,11 +308,11 @@ function basicCheck(prefix = "", attempt = 0) {
   recognition = r;
   r.lang = "tr-TR";
   r.maxAlternatives = 5;
-  r.interimResults = true;      // Konuşurken ara sonuçları da değerlendir (daha hızlı ve toleranslı)
-  r.manualStop = false;         // Çocuk "Bitir"e bastıysa true olur
-  let done = false;             // Sonuç verildi mi?
-  let lastHeard = "";           // Duyulan en yakın metin
-  r.onstart = () => { setRecording(true); setMsg(prefix + "Dinliyorum... 👂 Şimdi oku!"); };
+  r.interimResults = true;      // KonuÅŸurken ara sonuÃ§larÄ± da deÄŸerlendir (daha hÄ±zlÄ± ve toleranslÄ±)
+  r.manualStop = false;         // Ã‡ocuk "Bitir"e bastÄ±ysa true olur
+  let done = false;             // SonuÃ§ verildi mi?
+  let lastHeard = "";           // Duyulan en yakÄ±n metin
+  r.onstart = () => { setRecording(true); setMsg(prefix + "Dinliyorum... ğŸ‘‚ Åimdi oku!"); };
   r.onresult = (e) => {
     if (done) return;
     const res = e.results[e.results.length - 1];
@@ -321,11 +321,11 @@ function basicCheck(prefix = "", attempt = 0) {
       const heard = squeeze(clean(alt.transcript));
       if (!heard) continue;
       const s = similarity(heard, target);
-      // Kısa hecelerde "içeriyor / ile başlıyor" da yeterli (ör. "kaç" → "ka")
+      // KÄ±sa hecelerde "iÃ§eriyor / ile baÅŸlÄ±yor" da yeterli (Ã¶r. "kaÃ§" â†’ "ka")
       if (s >= PASS_RATIO || (current.kind === "syl" && heard.includes(target))) accepted = true;
       if (s > bestSim) { bestSim = s; lastHeard = heard; }
     }
-    if (accepted) {               // Doğru: beklemeden sonuçlandır
+    if (accepted) {               // DoÄŸru: beklemeden sonuÃ§landÄ±r
       done = true;
       try { r.stop(); } catch (err) {}
       onResult(true, randomPraise());
@@ -334,42 +334,42 @@ function basicCheck(prefix = "", attempt = 0) {
   r.onerror = (e) => {
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
       done = true;
-      setMsg("Mikrofona izin vermedin 🎤 Ebeveynine söyle: adres çubuğundaki kilit simgesinden " +
+      setMsg("Mikrofona izin vermedin ğŸ¤ Ebeveynine sÃ¶yle: adres Ã§ubuÄŸundaki kilit simgesinden " +
         "mikrofona izin versin.", "try");
     } else if (e.error === "aborted") {
       done = true;
     }
-    // "no-speech" ve diğer hatalar onend içinde ele alınır (otomatik tekrar)
+    // "no-speech" ve diÄŸer hatalar onend iÃ§inde ele alÄ±nÄ±r (otomatik tekrar)
   };
   r.onend = () => {
     setRecording(false);
     recognition = null;
     if (done) return;
     done = true;
-    if (lastHeard) { onResult(false, hintMessage(target, lastHeard)); return; }   // Bir şey duyuldu ama yanlış
+    if (lastHeard) { onResult(false, hintMessage(target, lastHeard)); return; }   // Bir ÅŸey duyuldu ama yanlÄ±ÅŸ
     if (attempt < 2 && !r.manualStop) { basicCheck(prefix, attempt + 1); return; } // Sessizlik: sessizce tekrar dinle
-    onResult(false, "Sesini duyamadım 🎤 Mikrofona biraz yaklaş ve yüksek sesle oku. Hazır olunca tekrar bas!");
+    onResult(false, "Sesini duyamadÄ±m ğŸ¤ Mikrofona biraz yaklaÅŸ ve yÃ¼ksek sesle oku. HazÄ±r olunca tekrar bas!");
   };
   try { r.start(); } catch (e) { setRecording(false); }
 }
 
-// Yanlış okuma için nazik ipucu: hangi ses eksik?
+// YanlÄ±ÅŸ okuma iÃ§in nazik ipucu: hangi ses eksik?
 function hintMessage(target, heard) {
-  if (!heard) return "Seni duyamadım. Bir daha dene! 🙂";
+  if (!heard) return "Seni duyamadÄ±m. Bir daha dene! ğŸ™‚";
   const letter = findMissingLetter(target, heard);
   if (letter) {
-    return `Çok yaklaştın! "${letter}" sesini biraz daha net söyle. Haydi bir daha! 💪`;
+    return `Ã‡ok yaklaÅŸtÄ±n! "${letter}" sesini biraz daha net sÃ¶yle. Haydi bir daha! ğŸ’ª`;
   }
-  return "Neredeyse oldu! Bir daha deneyelim! 💪";
+  return "Neredeyse oldu! Bir daha deneyelim! ğŸ’ª";
 }
 
-const PRAISES = ["Harika! Doğru okudun!", "Bravo sana!", "Çok güzel okudun!", "Süpersin!", "Aferin sana!"];
-function randomPraise() { return PRAISES[Math.floor(Math.random() * PRAISES.length)] + " 🎉"; }
+const PRAISES = ["Harika! DoÄŸru okudun!", "Bravo sana!", "Ã‡ok gÃ¼zel okudun!", "SÃ¼persin!", "Aferin sana!"];
+function randomPraise() { return PRAISES[Math.floor(Math.random() * PRAISES.length)] + " ğŸ‰"; }
 
-/* ---------- 6) KONTROL MODU 2: Gemini (yapay zekâ) ---------- */
+/* ---------- 6) KONTROL MODU 2: Gemini (yapay zekÃ¢) ---------- */
 
 async function aiCheck(key) {
-  // Zaten kayıt varsa erken bitir
+  // Zaten kayÄ±t varsa erken bitir
   if (mediaRec && mediaRec.state === "recording") { mediaRec.stop(); return; }
   if (!navigator.mediaDevices || !window.MediaRecorder) {
     SR ? basicCheck() : noSupportMessage();
@@ -378,7 +378,7 @@ async function aiCheck(key) {
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
-    setMsg("Mikrofona izin vermedin 🎤 Ebeveynine söyle: adres çubuğundaki kilit simgesinden " +
+    setMsg("Mikrofona izin vermedin ğŸ¤ Ebeveynine sÃ¶yle: adres Ã§ubuÄŸundaki kilit simgesinden " +
       "mikrofona izin versin.", "try");
     return;
   }
@@ -387,7 +387,7 @@ async function aiCheck(key) {
   mediaRec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
   mediaRec.onstart = () => {
     setRecording(true);
-    setMsg("Dinliyorum... 👂 (bitirince ⏹️ düğmesine bas)");
+    setMsg("Dinliyorum... ğŸ‘‚ (bitirince â¹ï¸ dÃ¼ÄŸmesine bas)");
     recTimer = setTimeout(() => { if (mediaRec && mediaRec.state === "recording") mediaRec.stop(); }, MAX_RECORD_MS);
   };
   mediaRec.onstop = async () => {
@@ -395,26 +395,26 @@ async function aiCheck(key) {
     const type = mediaRec.mimeType;
     mediaStream.getTracks().forEach((t) => t.stop());
     setRecording(false);
-    setMsg("Düşünüyorum... 🤔");
+    setMsg("DÃ¼ÅŸÃ¼nÃ¼yorum... ğŸ¤”");
     busy = true;
     try {
       const blob = new Blob(chunks, { type });
-      const audio = await toGeminiAudio(blob);          // WAV'a çevir (en uyumlu biçim)
+      const audio = await toGeminiAudio(blob);          // WAV'a Ã§evir (en uyumlu biÃ§im)
       const out = await askGemini(key, current.text, audio);
       busy = false;
-      onResult(!!out.dogru, AI_DEBUG_PREFIX + (out.mesaj || (out.dogru ? randomPraise() : "Bir daha dene! 🙂")));
+      onResult(!!out.dogru, AI_DEBUG_PREFIX + (out.mesaj || (out.dogru ? randomPraise() : "Bir daha dene! ğŸ™‚")));
     } catch (err) {
-      // Hata olursa anahtarsız moda düş
-      console.error("Gemini hatası:", err);
+      // Hata olursa anahtarsÄ±z moda dÃ¼ÅŸ
+      console.error("Gemini hatasÄ±:", err);
       busy = false;
-      if (SR) basicCheck("Yapay zekâya ulaşamadım (" + String(err.message).slice(0, 90) + "), tarayıcı ile deniyorum. ");
-      else setMsg("Yapay zekâya ulaşılamadı: " + String(err.message).slice(0, 120), "try");
+      if (SR) basicCheck("Yapay zekÃ¢ya ulaÅŸamadÄ±m (" + String(err.message).slice(0, 90) + "), tarayÄ±cÄ± ile deniyorum. ");
+      else setMsg("Yapay zekÃ¢ya ulaÅŸÄ±lamadÄ±: " + String(err.message).slice(0, 120), "try");
     }
   };
   mediaRec.start();
 }
 
-// Kaydı 16 kHz mono 16-bit WAV'a çevirir; olmazsa ham kaydı döndürür.
+// KaydÄ± 16 kHz mono 16-bit WAV'a Ã§evirir; olmazsa ham kaydÄ± dÃ¶ndÃ¼rÃ¼r.
 async function toGeminiAudio(blob) {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -452,16 +452,16 @@ function blobToBase64(blob) {
   });
 }
 
-// Gemini'ye ses + istem gönder, {"dogru":bool,"mesaj":"..."} bekle
+// Gemini'ye ses + istem gÃ¶nder, {"dogru":bool,"mesaj":"..."} bekle
 async function askGemini(key, target, audio) {
   const prompt =
-    `Sen okumayı yeni öğrenen, 6-8 yaş arası bir Türk çocuğa yardım eden sevimli ve sabırlı bir öğretmensin. ` +
-    `Çocuğun okuması gereken metin: "${target}". Ekteki ses kaydını dinle. ` +
-    `Çocuk heceleyerek (ör. "ka-le"), yavaş veya hafif hatalı telaffuzla okuyabilir; bu normaldir. ` +
-    `Metin büyük ölçüde doğru okunduysa "dogru": true de ve kısa bir tebrik yaz. ` +
-    `Yanlışsa veya sessizse "dogru": false de; hangi sesin (harfin) eksik ya da farklı olduğunu nazikçe, ` +
-    `moral bozmadan söyle ve tekrar denemesini teşvik et. "mesaj" en fazla 2 kısa Türkçe cümle olsun. ` +
-    `Sadece şu JSON biçiminde yanıt ver: {"dogru": true veya false, "mesaj": "..."}`;
+    `Sen okumayÄ± yeni Ã¶ÄŸrenen, 6-8 yaÅŸ arasÄ± bir TÃ¼rk Ã§ocuÄŸa yardÄ±m eden sevimli ve sabÄ±rlÄ± bir Ã¶ÄŸretmensin. ` +
+    `Ã‡ocuÄŸun okumasÄ± gereken metin: "${target}". Ekteki ses kaydÄ±nÄ± dinle. ` +
+    `Ã‡ocuk heceleyerek (Ã¶r. "ka-le"), yavaÅŸ veya hafif hatalÄ± telaffuzla okuyabilir; bu normaldir. ` +
+    `Metin bÃ¼yÃ¼k Ã¶lÃ§Ã¼de doÄŸru okunduysa "dogru": true de ve kÄ±sa bir tebrik yaz. ` +
+    `YanlÄ±ÅŸsa veya sessizse "dogru": false de; hangi sesin (harfin) eksik ya da farklÄ± olduÄŸunu nazikÃ§e, ` +
+    `moral bozmadan sÃ¶yle ve tekrar denemesini teÅŸvik et. "mesaj" en fazla 2 kÄ±sa TÃ¼rkÃ§e cÃ¼mle olsun. ` +
+    `Sadece ÅŸu JSON biÃ§iminde yanÄ±t ver: {"dogru": true veya false, "mesaj": "..."}`;
   const data = await callGemini(key, {
     contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: audio.mime, data: audio.b64 } }] }],
     generationConfig: { responseMimeType: "application/json", temperature: 0.3 }
@@ -470,19 +470,31 @@ async function askGemini(key, target, audio) {
   return JSON.parse(text);
 }
 
-// Gemini REST çağrısı; hata olursa nedenini (HTTP kodu + Google'ın mesajı) içeren Error fırlatır
+// Gemini REST Ã§aÄŸrÄ±sÄ±. Ã–nce bilinen modeller denenir; hepsi baÅŸarÄ±sÄ±z olursa hesabÄ±n gerÃ§ekten
+// kullanabildiÄŸi modeller Google'dan sorulup (ListModels) onlar denenir.
+// Hata olursa denenen her modelin hatasÄ±nÄ± iÃ§eren Error fÄ±rlatÄ±r.
 async function callGemini(key, body, onProgress) {
-  let lastErr = null;
-  // Önce son çalışan model, sonra listedekiler sırayla denenir
-  const tried = [...new Set([localStorage.getItem(LS.model), ...GEMINI_MODELS].filter(Boolean))];
-  for (const model of tried) {
+  const errors = [];
+  const known = [...new Set([localStorage.getItem(LS.model), ...GEMINI_MODELS].filter(Boolean))];
+  const first = await tryModels(key, body, known, onProgress, errors);
+  if (first) return first;
+  if (errors.some((e) => /API key|HTTP 403|HTTP 401/i.test(e))) throw new Error(errors.join(" | "));
+  // Bilinen modellerin hiÃ§biri Ã§alÄ±ÅŸmadÄ±: gÃ¼ncel model listesini Google'dan al
+  if (onProgress) onProgress("model listesi");
+  const found = (await discoverModels(key, errors)).filter((m) => !known.includes(m));
+  const second = await tryModels(key, body, found.slice(0, 4), onProgress, errors);
+  if (second) return second;
+  throw new Error(errors.join(" | "));
+}
+
+// Verilen modelleri sÄ±rayla dener; ilk baÅŸarÄ±lÄ± cevabÄ± dÃ¶ndÃ¼rÃ¼r, hiÃ§biri olmazsa null
+async function tryModels(key, body, models, onProgress, errors) {
+  for (const model of models) {
     if (onProgress) onProgress(model);
-    // Her istek için zaman aşımı: sonsuza kadar beklemesin
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), GEMINI_TIMEOUT_MS);
-    let resp;
+    const timer = setTimeout(() => ctrl.abort(), GEMINI_TIMEOUT_MS);   // sonsuz beklemesin
     try {
-      resp = await fetch(
+      const resp = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method: "POST",
@@ -491,45 +503,60 @@ async function callGemini(key, body, onProgress) {
           signal: ctrl.signal
         }
       );
+      if (resp.ok) {
+        localStorage.setItem(LS.model, model);       // Ã§alÄ±ÅŸan modeli hatÄ±rla
+        return await resp.json();
+      }
+      let detail = "";
+      try { detail = (await resp.json()).error.message; } catch (e) {}
+      errors.push("HTTP " + resp.status + " [" + model + "] " + detail.slice(0, 160));
+      if (/API key/i.test(detail) || resp.status === 401 || resp.status === 403) return null;   // anahtar sorunu: devam etme
     } catch (e) {
+      errors.push((e.name === "AbortError" ? "Zaman aÅŸÄ±mÄ±" : "AÄŸ hatasÄ±") + " [" + model + "]");
+    } finally {
       clearTimeout(timer);
-      lastErr = new Error(e.name === "AbortError"
-        ? "Zaman aşımı [" + model + "] (" + GEMINI_TIMEOUT_MS / 1000 + " sn cevap yok)"
-        : "Ağ hatası [" + model + "]: " + e.message);
-      continue;                                  // sıradaki modeli dene
     }
-    clearTimeout(timer);
-    if (resp.ok) {
-      localStorage.setItem(LS.model, model);   // çalışan modeli hatırla
-      return resp.json();
-    }
-    let detail = "";
-    try { detail = (await resp.json()).error.message; } catch (e) {}
-    lastErr = new Error("HTTP " + resp.status + " [" + model + "]" + (detail ? " - " + detail : ""));
-    // Model bulunamadı / kapatıldı / kota / yoğunluk ise sıradaki modeli dene; diğer hatalarda (ör. geçersiz anahtar) dur
-    if (![400, 404, 429, 503].includes(resp.status) || /API key/i.test(detail)) break;
   }
-  throw lastErr;
+  return null;
 }
 
-/* ---------- 7) SONUÇ, KONFETİ, HARF SEÇİCİ, EBEVEYN, PWA ---------- */
+// HesabÄ±n kullanabildiÄŸi, metin/ses Ã¼retebilen "flash" modellerini yeniden eskiye sÄ±ralÄ± dÃ¶ndÃ¼rÃ¼r
+async function discoverModels(key, errors) {
+  try {
+    const resp = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+      { headers: { "x-goog-api-key": key } });
+    if (!resp.ok) { errors.push("Model listesi alÄ±namadÄ±: HTTP " + resp.status); return []; }
+    const list = (await resp.json()).models || [];
+    const ver = (n) => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]);
+    return list
+      .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map((m) => m.name.replace(/^models\//, ""))
+      .filter((n) => /flash/.test(n) && !/lite|image|tts|live|embed|robotics|computer|thinking|exp/.test(n))
+      .sort((a, b) => ver(b) - ver(a) || a.length - b.length);
+  } catch (e) {
+    errors.push("Model listesi alÄ±namadÄ±");
+    return [];
+  }
+}
+
+/* ---------- 7) SONUÃ‡, KONFETÄ°, HARF SEÃ‡Ä°CÄ°, EBEVEYN, PWA ---------- */
 
 function onResult(ok, msg) {
   setMsg(msg, ok ? "good" : "try");
   speak(msg.replace(/[^\p{L}\p{N}\s.,!?'"-]/gu, ""), 0.9);
   if (!ok) return;
-  $("emoji").textContent = current.kind === "syl" ? "🌟" : current.emoji;   // Ödül olarak görseli göster
+  $("emoji").textContent = current.kind === "syl" ? "ğŸŒŸ" : current.emoji;   // Ã–dÃ¼l olarak gÃ¶rseli gÃ¶ster
   state.score += 1;
   state.correct[state.level] = (state.correct[state.level] || 0) + 1;
   saveState();
   renderHeader();
   burstConfetti();
   if (state.correct[state.level] % ROUND_SIZE === 0) {
-    setTimeout(() => setMsg("🏆 Tur tamam! 10 doğru yaptın! Üstteki seviyelerden yenisini deneyebilirsin.", "good"), 1800);
+    setTimeout(() => setMsg("ğŸ† Tur tamam! 10 doÄŸru yaptÄ±n! Ãœstteki seviyelerden yenisini deneyebilirsin.", "good"), 1800);
   }
 }
 
-// --- Konfeti (basit canvas parçacıkları) ---
+// --- Konfeti (basit canvas parÃ§acÄ±klarÄ±) ---
 const canvas = $("confetti");
 const g = canvas.getContext("2d");
 let parts = [], anim = null;
@@ -558,7 +585,7 @@ function tick() {
   anim = parts.length ? requestAnimationFrame(tick) : null;
 }
 
-// --- Harf seçici ---
+// --- Harf seÃ§ici ---
 let pendingCount = state.letterCount;
 function openPicker() {
   pendingCount = state.letterCount || 0;
@@ -576,8 +603,8 @@ function renderPicker() {
     grid.appendChild(b);
   });
   $("pickerInfo").textContent = pendingCount
-    ? "Seçilen harfler: " + order.slice(0, pendingCount).join(" ")
-    : "Bir harfe dokun 👆";
+    ? "SeÃ§ilen harfler: " + order.slice(0, pendingCount).join(" ")
+    : "Bir harfe dokun ğŸ‘†";
   $("startBtn").disabled = !pendingCount;
 }
 $("startBtn").onclick = () => {
@@ -589,13 +616,13 @@ $("startBtn").onclick = () => {
 };
 $("lettersBtn").onclick = openPicker;
 
-// --- Düğmeler ---
+// --- DÃ¼ÄŸmeler ---
 $("listen").onclick = () => current && speak(spokenText(current), current.kind === "sentence" ? 0.65 : 0.55);
 $("next").onclick = nextItem;
 $("prev").onclick = prevItem;
 $("mic").onclick = () => {
   if (!current) return;
-  // Kayıt sürüyorsa: durdur
+  // KayÄ±t sÃ¼rÃ¼yorsa: durdur
   if (recognition) { recognition.manualStop = true; recognition.stop(); return; }
   if (mediaRec && mediaRec.state === "recording") { mediaRec.stop(); return; }
   if (busy) return;
@@ -609,7 +636,7 @@ document.querySelectorAll(".lvl").forEach((b) => {
 
 // --- Ebeveyn paneli ---
 function renderKeyState() {
-  $("keyState").textContent = localStorage.getItem(LS.key) ? "✅ Yapay zekâ modu açık" : "Anahtarsız mod";
+  $("keyState").textContent = localStorage.getItem(LS.key) ? "âœ… Yapay zekÃ¢ modu aÃ§Ä±k" : "AnahtarsÄ±z mod";
 }
 $("key").value = localStorage.getItem(LS.key) || "";
 $("saveKey").onclick = () => {
@@ -618,24 +645,24 @@ $("saveKey").onclick = () => {
   renderKeyState();
 };
 $("clearKey").onclick = () => { localStorage.removeItem(LS.key); $("key").value = ""; renderKeyState(); };
-// Anahtarı göster/gizle (yapıştırılan anahtarı kontrol etmek için)
+// AnahtarÄ± gÃ¶ster/gizle (yapÄ±ÅŸtÄ±rÄ±lan anahtarÄ± kontrol etmek iÃ§in)
 $("showKey").onclick = () => {
   const hidden = $("key").type === "password";
   $("key").type = hidden ? "text" : "password";
-  $("showKey").textContent = hidden ? "🙈 Gizle" : "👁️ Göster";
+  $("showKey").textContent = hidden ? "ğŸ™ˆ Gizle" : "ğŸ‘ï¸ GÃ¶ster";
 };
-// Anahtarı test et: kısa bir metin isteği gönderip sonucu/hatayı gösterir
+// AnahtarÄ± test et: kÄ±sa bir metin isteÄŸi gÃ¶nderip sonucu/hatayÄ± gÃ¶sterir
 $("testKey").onclick = async () => {
   const k = $("key").value.trim();
-  if (!k) { $("keyState").textContent = "Önce anahtarı yapıştırın."; return; }
+  if (!k) { $("keyState").textContent = "Ã–nce anahtarÄ± yapÄ±ÅŸtÄ±rÄ±n."; return; }
   localStorage.setItem(LS.key, k);
   $("keyState").textContent = "Test ediliyor...";
   try {
     await callGemini(k, { contents: [{ parts: [{ text: "Sadece 'tamam' yaz." }] }] },
       (m) => { $("keyState").textContent = "Test ediliyor: " + m + " ..."; });
-    $("keyState").textContent = "✅ Anahtar çalışıyor, kaydedildi.";
+    $("keyState").textContent = "âœ… Anahtar Ã§alÄ±ÅŸÄ±yor, kaydedildi.";
   } catch (e) {
-    $("keyState").textContent = "❌ " + e.message;
+    $("keyState").textContent = "âŒ " + e.message;
   }
 };
 $("order").value = order.join(" ");
@@ -663,8 +690,8 @@ if ("serviceWorker" in navigator) {
   addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}));
 }
 
-// --- Başlangıç ---
-$("ver").textContent = "Sürüm " + APP_VERSION + (localStorage.getItem(LS.key) ? " · 🤖 anahtar kayıtlı" : " · anahtar yok");
+// --- BaÅŸlangÄ±Ã§ ---
+$("ver").textContent = "SÃ¼rÃ¼m " + APP_VERSION + (localStorage.getItem(LS.key) ? " Â· ğŸ¤– anahtar kayÄ±tlÄ±" : " Â· anahtar yok");
 renderHeader();
 renderKeyState();
 if (state.letterCount > 0 && state.letterCount <= order.length) newSession();
