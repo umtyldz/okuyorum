@@ -12,12 +12,14 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const GEMINI_MODEL = "gemini-2.5-flash";   // Model adı değişirse sadece burayı güncelleyin
+// Denenecek Gemini modelleri (ilk sıradaki öncelikli; hata olursa sıradakine geçilir).
+// Bir model kapatılırsa buraya yenisini ekleyin.
+const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"];
 const MAX_RECORD_MS = 6000;                // Yapay zekâ modunda en fazla kayıt süresi
 const PASS_RATIO = 0.75;                   // Levenshtein benzerlik eşiği
 const ROUND_SIZE = 10;                     // Her 10 doğru cevap = 1 tur
 // Test için ekranın en üstünde gösterilir. Her güncellemede artırın.
-const APP_VERSION = "v8";
+const APP_VERSION = "v9";
 // GEÇİCİ test: yapay zekâ cevap verdiğinde mesajın başına eklenir (hem yazılır hem söylenir).
 // Kaldırmak için "" yapın.
 const AI_DEBUG_PREFIX = "Google: ";
@@ -25,6 +27,7 @@ const AI_DEBUG_PREFIX = "Google: ";
 const LS = {
   state: "okuyorum.state",
   key: "okuyorum.geminiKey",
+  model: "okuyorum.geminiModel",
   order: "okuyorum.letterOrder"
 };
 const $ = (id) => document.getElementById(id);
@@ -468,20 +471,29 @@ async function askGemini(key, target, audio) {
 
 // Gemini REST çağrısı; hata olursa nedenini (HTTP kodu + Google'ın mesajı) içeren Error fırlatır
 async function callGemini(key, body) {
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify(body)
+  let lastErr = null;
+  // Önce son çalışan model, sonra listedekiler sırayla denenir
+  const tried = [...new Set([localStorage.getItem(LS.model), ...GEMINI_MODELS].filter(Boolean))];
+  for (const model of tried) {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body)
+      }
+    );
+    if (resp.ok) {
+      localStorage.setItem(LS.model, model);   // çalışan modeli hatırla
+      return resp.json();
     }
-  );
-  if (!resp.ok) {
     let detail = "";
     try { detail = (await resp.json()).error.message; } catch (e) {}
-    throw new Error("HTTP " + resp.status + (detail ? " - " + detail : ""));
+    lastErr = new Error("HTTP " + resp.status + " [" + model + "]" + (detail ? " - " + detail : ""));
+    // Model bulunamadı / kapatıldı / kota / yoğunluk ise sıradaki modeli dene; diğer hatalarda (ör. geçersiz anahtar) dur
+    if (![400, 404, 429, 503].includes(resp.status) || /API key/i.test(detail)) break;
   }
-  return resp.json();
+  throw lastErr;
 }
 
 /* ---------- 7) SONUÇ, KONFETİ, HARF SEÇİCİ, EBEVEYN, PWA ---------- */
