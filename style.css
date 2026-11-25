@@ -25,6 +25,7 @@ body {
 }
 
 button { font-family: inherit; cursor: pointer; border: 0; color: #fff; }
+.ver { font: 13px system-ui, sans-serif; background: #3a2a5c; color: #fff; padding: 3px 12px; border-radius: 99px; margin-bottom: 8px; }
 button:active { transform: scale(.96); }
 button:focus-visible { outline: 4px solid #000; outline-offset: 2px; }
 

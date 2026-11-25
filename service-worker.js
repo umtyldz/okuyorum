@@ -1,20 +1,20 @@
 ﻿/* =====================================================================
-   service-worker.js â€” temel dosyalarÄ± Ã¶nbelleÄŸe alÄ±r (Ã§evrimdÄ±ÅŸÄ± Ã§alÄ±ÅŸÄ±r).
-   Dosyalarda deÄŸiÅŸiklik yaptÄ±ÄŸÄ±nÄ±zda CACHE_VERSION sayÄ±sÄ±nÄ± artÄ±rÄ±n.
+   service-worker.js — temel dosyaları önbelleğe alır (çevrimdışı çalışır).
+   Dosyalarda değişiklik yaptığınızda CACHE_VERSION sayısını artırın.
    ===================================================================== */
-const CACHE_VERSION = "okuyorum-v7";
+const CACHE_VERSION = "okuyorum-v8";
 const FILES = [
   "./", "./index.html", "./style.css", "./app.js", "./words.js",
   "./manifest.json", "./icon-192.png", "./icon-512.png"
 ];
 
-// Kurulum: dosyalarÄ± Ã¶nbelleÄŸe ekle
+// Kurulum: dosyaları önbelleğe ekle
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE_VERSION).then((c) => c.addAll(FILES)));
   self.skipWaiting();
 });
 
-// EtkinleÅŸtirme: eski Ã¶nbellekleri sil
+// Etkinleştirme: eski önbellekleri sil
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
@@ -24,15 +24,16 @@ self.addEventListener("activate", (e) => {
   self.clients.claim();
 });
 
-// Ä°stekler: aynÄ± site dosyalarÄ± Ã¶nce Ã¶nbellekten; Gemini API gibi dÄ±ÅŸ istekler aÄŸdan.
+// İstekler: AĞ ÖNCELİKLİ — internet varsa hep en yeni dosya gelir (güncellemeler hemen görünür),
+// internet yoksa önbellekten çalışır (çevrimdışı). Gemini API gibi dış istekler karışmaz.
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
   e.respondWith(
-    caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+    fetch(req, { cache: "no-cache" }).then((res) => {
       const copy = res.clone();
       caches.open(CACHE_VERSION).then((c) => c.put(req, copy));
       return res;
-    }).catch(() => caches.match("./index.html")))
+    }).catch(() => caches.match(req).then((hit) => hit || caches.match("./index.html")))
   );
 });

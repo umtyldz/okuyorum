@@ -16,6 +16,8 @@ const GEMINI_MODEL = "gemini-2.5-flash";   // Model adı değişirse sadece bura
 const MAX_RECORD_MS = 6000;                // Yapay zekâ modunda en fazla kayıt süresi
 const PASS_RATIO = 0.75;                   // Levenshtein benzerlik eşiği
 const ROUND_SIZE = 10;                     // Her 10 doğru cevap = 1 tur
+// Test için ekranın en üstünde gösterilir. Her güncellemede artırın.
+const APP_VERSION = "v8";
 // GEÇİCİ test: yapay zekâ cevap verdiğinde mesajın başına eklenir (hem yazılır hem söylenir).
 // Kaldırmak için "" yapın.
 const AI_DEBUG_PREFIX = "Google: ";
@@ -633,6 +635,7 @@ if ("serviceWorker" in navigator) {
 }
 
 // --- Başlangıç ---
+$("ver").textContent = "Sürüm " + APP_VERSION + (localStorage.getItem(LS.key) ? " · 🤖 anahtar kayıtlı" : " · anahtar yok");
 renderHeader();
 renderKeyState();
 if (state.letterCount > 0 && state.letterCount <= order.length) newSession();
