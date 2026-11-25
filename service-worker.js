@@ -2,7 +2,7 @@
    service-worker.js â€” temel dosyalarÄ± Ã¶nbelleÄŸe alÄ±r (Ã§evrimdÄ±ÅŸÄ± Ã§alÄ±ÅŸÄ±r).
    Dosyalarda deÄŸiÅŸiklik yaptÄ±ÄŸÄ±nÄ±zda CACHE_VERSION sayÄ±sÄ±nÄ± artÄ±rÄ±n.
    ===================================================================== */
-const CACHE_VERSION = "okuyorum-v5";
+const CACHE_VERSION = "okuyorum-v6";
 const FILES = [
   "./", "./index.html", "./style.css", "./app.js", "./words.js",
   "./manifest.json", "./icon-192.png", "./icon-512.png"

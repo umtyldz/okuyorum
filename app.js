@@ -398,8 +398,8 @@ async function aiCheck(key) {
       // Hata olursa anahtarsız moda düş
       console.error("Gemini hatası:", err);
       busy = false;
-      if (SR) basicCheck("Yapay zekâya ulaşamadım, tarayıcı ile deniyorum. ");
-      else setMsg("Yapay zekâya ulaşılamadı 😔 Biraz sonra tekrar dene.", "try");
+      if (SR) basicCheck("Yapay zekâya ulaşamadım (" + String(err.message).slice(0, 90) + "), tarayıcı ile deniyorum. ");
+      else setMsg("Yapay zekâya ulaşılamadı: " + String(err.message).slice(0, 120), "try");
     }
   };
   mediaRec.start();
@@ -453,21 +453,30 @@ async function askGemini(key, target, audio) {
     `Yanlışsa veya sessizse "dogru": false de; hangi sesin (harfin) eksik ya da farklı olduğunu nazikçe, ` +
     `moral bozmadan söyle ve tekrar denemesini teşvik et. "mesaj" en fazla 2 kısa Türkçe cümle olsun. ` +
     `Sadece şu JSON biçiminde yanıt ver: {"dogru": true veya false, "mesaj": "..."}`;
+  const data = await callGemini(key, {
+    contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: audio.mime, data: audio.b64 } }] }],
+    generationConfig: { responseMimeType: "application/json", temperature: 0.3 }
+  });
+  const text = data.candidates[0].content.parts.map((p) => p.text || "").join("");
+  return JSON.parse(text);
+}
+
+// Gemini REST çağrısı; hata olursa nedenini (HTTP kodu + Google'ın mesajı) içeren Error fırlatır
+async function callGemini(key, body) {
   const resp = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: audio.mime, data: audio.b64 } }] }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.3 }
-      })
+      body: JSON.stringify(body)
     }
   );
-  if (!resp.ok) throw new Error("HTTP " + resp.status);
-  const data = await resp.json();
-  const text = data.candidates[0].content.parts.map((p) => p.text || "").join("");
-  return JSON.parse(text);
+  if (!resp.ok) {
+    let detail = "";
+    try { detail = (await resp.json()).error.message; } catch (e) {}
+    throw new Error("HTTP " + resp.status + (detail ? " - " + detail : ""));
+  }
+  return resp.json();
 }
 
 /* ---------- 7) SONUÇ, KONFETİ, HARF SEÇİCİ, EBEVEYN, PWA ---------- */
@@ -576,6 +585,25 @@ $("saveKey").onclick = () => {
   renderKeyState();
 };
 $("clearKey").onclick = () => { localStorage.removeItem(LS.key); $("key").value = ""; renderKeyState(); };
+// Anahtarı göster/gizle (yapıştırılan anahtarı kontrol etmek için)
+$("showKey").onclick = () => {
+  const hidden = $("key").type === "password";
+  $("key").type = hidden ? "text" : "password";
+  $("showKey").textContent = hidden ? "🙈 Gizle" : "👁️ Göster";
+};
+// Anahtarı test et: kısa bir metin isteği gönderip sonucu/hatayı gösterir
+$("testKey").onclick = async () => {
+  const k = $("key").value.trim();
+  if (!k) { $("keyState").textContent = "Önce anahtarı yapıştırın."; return; }
+  localStorage.setItem(LS.key, k);
+  $("keyState").textContent = "Test ediliyor...";
+  try {
+    await callGemini(k, { contents: [{ parts: [{ text: "Sadece 'tamam' yaz." }] }] });
+    $("keyState").textContent = "✅ Anahtar çalışıyor, kaydedildi.";
+  } catch (e) {
+    $("keyState").textContent = "❌ " + e.message;
+  }
+};
 $("order").value = order.join(" ");
 $("saveOrder").onclick = () => {
   const arr = parseOrder($("order").value);
