@@ -1,4 +1,4 @@
-/* =====================================================================
+﻿/* =====================================================================
    app.js — Okuyorum ana mantık
    Bölümler:
      1) Ayarlar ve durum (localStorage)
@@ -159,7 +159,7 @@ function pickNext() {
   }
   const newest = order.slice(Math.max(0, state.letterCount - 2), state.letterCount);
   const fresh = pool.filter((p) => newest.some((l) => p.text.includes(l)));
-  const cands = (fresh.length && Math.random() < 0.6 ? fresh : pool)
+  const cands = (fresh.length && shownList.length > 0 && Math.random() < 0.6 ? fresh : pool)
     .filter((p) => !recentIds.includes(p.text));
   const list = cands.length ? cands : pool;
   const item = list[Math.floor(Math.random() * list.length)];
@@ -220,10 +220,33 @@ function showItem(item, note = "") {
   setMsg(note || (item.kind === "sentence" ? "Cümleyi oku!" : "Mikrofona bas ve oku!"));
 }
 
+// Gösterim geçmişi: "Önceki" düğmesi için
+let shownList = [], shownPos = -1;
+
 function nextItem() {
   stopAll();
+  if (shownPos < shownList.length - 1) {            // Geri gidilmişse önce geçmişte ileri git
+    shownPos++;
+    showItem(shownList[shownPos]);
+    return;
+  }
   const { item, note } = pickNext();
+  shownList.push(item);
+  if (shownList.length > 50) shownList.shift();
+  shownPos = shownList.length - 1;
   showItem(item, note);
+}
+
+function prevItem() {
+  stopAll();
+  if (shownPos > 0) { shownPos--; showItem(shownList[shownPos]); }
+  else setMsg("Bu ilk kelime 🙂");
+}
+
+// Seviye seçildiğinde / yeniden başlandığında: geçmişi sıfırla, tamamen rastgele başla
+function newSession() {
+  shownList = []; shownPos = -1; recentIds = [];
+  nextItem();
 }
 
 // Seslendirilecek metin: heceler/kelimeler küçük harfle (harf adı okunmasın diye)
@@ -520,13 +543,14 @@ $("startBtn").onclick = () => {
   state.letterCount = pendingCount;
   saveState();
   $("picker").hidden = true;
-  nextItem();
+  newSession();
 };
 $("lettersBtn").onclick = openPicker;
 
 // --- Düğmeler ---
 $("listen").onclick = () => current && speak(spokenText(current), current.kind === "sentence" ? 0.65 : 0.55);
 $("next").onclick = nextItem;
+$("prev").onclick = prevItem;
 $("mic").onclick = () => {
   if (!current) return;
   // Kayıt sürüyorsa: durdur
@@ -538,7 +562,7 @@ $("mic").onclick = () => {
   key ? aiCheck(key) : basicCheck();
 };
 document.querySelectorAll(".lvl").forEach((b) => {
-  b.onclick = () => { state.level = Number(b.dataset.level); saveState(); renderHeader(); nextItem(); };
+  b.onclick = () => { state.level = Number(b.dataset.level); saveState(); renderHeader(); newSession(); };
 });
 
 // --- Ebeveyn paneli ---
@@ -580,5 +604,5 @@ if ("serviceWorker" in navigator) {
 // --- Başlangıç ---
 renderHeader();
 renderKeyState();
-if (state.letterCount > 0 && state.letterCount <= order.length) nextItem();
+if (state.letterCount > 0 && state.letterCount <= order.length) newSession();
 else { openPicker(); }

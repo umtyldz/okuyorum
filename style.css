@@ -81,6 +81,11 @@ button:focus-visible { outline: 4px solid #000; outline-offset: 2px; }
 .btn-mic { background: var(--green); min-width: 210px; }
 .btn-next { background: var(--purple); }
 .btn-start { background: var(--orange); margin-top: 14px; }
+/* Küçük "Önceki" düğmesi (Sonraki'nin solunda) */
+.btn-prev {
+  align-self: center; background: #9ca3af; font-size: 15px; font-weight: bold;
+  padding: 8px 12px; min-height: 40px; border-radius: 12px;
+}
 .btn:disabled { opacity: .5; }
 
 /* Kayıt sırasında düğme animasyonu */
