@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v16";
+const APP_VERSION = "v17";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -481,7 +481,7 @@ function basicCheck(prefix = "", attempt = 0, myId = ++activeCheckId) {
     done = true;
     if (lastHeard) {
       setRecording(false); busy = false;
-      onResult(false, WRONG_MSG, "🎙️ Tarayıcı", lastRawHeard);
+      onResult(false, randomRetry(), "🎙️ Tarayıcı", lastRawHeard);
       return;
     }
     if (attempt < 2 && !manualStop) {
@@ -495,9 +495,72 @@ function basicCheck(prefix = "", attempt = 0, myId = ++activeCheckId) {
   try { r.start(); } catch (e) { setRecording(false); busy = false; }
 }
 
-const WRONG_MSG = "Yanlış oldu, tekrar dene! 💪";
-const PRAISES = ["Harika! Doğru okudun!", "Bravo sana!", "Çok güzel okudun!", "Süpersin!", "Aferin sana!"];
-function randomPraise() { return PRAISES[Math.floor(Math.random() * PRAISES.length)] + " 🎉"; }
+const PRAISES = [
+  "Harika! Doğru okudun! 🎉",
+  "Bravo sana, süpersin! 🌟",
+  "Vay canına, yıldız gibi parladın! ✨",
+  "Roket gibi uçtun, harikasın! 🚀",
+  "Çak bir beşlik, müthiş okudun! 🙌",
+  "Süper kahraman gibisin! 🦸",
+  "Şampiyon gibi okudun! 🏆",
+  "Alkışlar sana geliyor! 👏",
+  "Bütün yıldızları topluyorsun! ⭐",
+  "Harika bir okuma ustasısın! 👑",
+  "Gökkuşağı kadar renkli okudun! 🌈",
+  "Zıp zıp tavşan gibi hızlı ve doğru! 🐰",
+  "Tam isabet, on numara! 🎯",
+  "Kulaklarıma inanamadım, çok güzel! 🎶",
+  "Aferin sana, çok iyi gidiyorsun! 🎈",
+  "Şahane okudun, yüzüm güldü! 😄",
+  "Bir kelime daha avladın! 🦁",
+  "Bal arısı gibi çalışkansın! 🐝",
+  "Süper hızla doğru bildin! ⚡",
+  "Muhteşem! Konfetiler senin için! 🎊",
+  "Okuma canavarı iş başında! 🦖",
+  "Tebrikler, resmen parlıyorsun! 🌞",
+  "Çok net, çok güzel okudun! 🔔",
+  "Kocaman bir aferin sana! 💖",
+  "Böyle devam et, harikasın! 🦋",
+  "Bilge baykuş gibi bildin! 🦉",
+  "Çok tatlı okudun, bravo! 🍓",
+  "Günün yıldızı sensin! 🌠"
+];
+
+const RETRIES = [
+  "Hoppala, biraz kaçtı! Haydi bir daha dene! 🎈",
+  "Olmadı ama çok yaklaştın, tekrar dene! 💫",
+  "Küçük bir takılma oldu, şimdi yakalarsın! 🚀",
+  "Azıcık kaydı, haydi bir daha deneyelim! 🐝",
+  "Tam tutmadı, derin bir nefes al ve tekrar oku! 🌈",
+  "Bu sefer kaçırdık, sıradaki denemede yakalarız! 🎯",
+  "Yanlış oldu, haydi bir tur daha deneyelim! 🌟",
+  "Kelime biraz saklandı, tekrar dene bakalım! 🕵️",
+  "Neredeyse yakalıyordun, bir kez daha oku! 🐾",
+  "Şimdi daha güzel okuyacaksın, haydi tekrar! 💪",
+  "Ufukta doğru cevap var, bir daha dene! ⛵",
+  "Ters gitti ama hiç sorun değil, tekrar okuyalım! 🍀",
+  "Olmadı bu kez, mikrofon seni bekliyor! 🎤",
+  "Biraz farklı çıktı, haydi baştan oku! 🎵",
+  "Denemekten vazgeçme, şimdi başaracaksın! 🦁",
+  "Hop, kelime elimizden kaydı! Tekrar yakala! 🦋",
+  "Az kalsın oluyordu, bir daha deneyelim! ✨",
+  "İlk deneme ısınmaydı, şimdi gerçek okuma! 🔥",
+  "Yanlış duyduk sanki, biraz daha net oku! 👂",
+  "Haydi şampiyon, bir kez daha dene! 🏆"
+];
+
+const recentPraises = [];
+const recentRetries = [];
+function pickUnique(list, recent) {
+  const cands = list.filter((m) => !recent.includes(m));
+  const pool = cands.length ? cands : list;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  recent.push(pick);
+  if (recent.length > 5) recent.shift();
+  return pick;
+}
+function randomPraise() { return pickUnique(PRAISES, recentPraises); }
+function randomRetry() { return pickUnique(RETRIES, recentRetries); }
 
 /* ---------- 6) KONTROL MODU 2: Gemini (yapay zekâ) ---------- */
 
@@ -609,7 +672,7 @@ async function aiCheck(key) {
       const sec = ((Date.now() - t0) / 1000).toFixed(1);
       busy = false;
       const heard = out.dogru ? "" : String(out.duyulan || "").trim();
-      onResult(!!out.dogru, out.dogru ? randomPraise() : WRONG_MSG, `🤖 Yapay zekâ · ${sec} sn`, heard);
+      onResult(!!out.dogru, out.dogru ? randomPraise() : randomRetry(), `🤖 Yapay zekâ · ${sec} sn`, heard);
     } catch (err) {
       if (myId !== activeCheckId || err.name === "AbortError") { busy = false; return; }
       console.error("Gemini hatası:", err);
