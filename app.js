@@ -201,7 +201,7 @@ function setMsg(text, cls = "") {
 
 function showItem(item, note = "") {
   current = item;
-  $("emoji").textContent = item.emoji;
+  $("emoji").textContent = "";   // Görsel, doğru okuyunca gösterilir (ipucu olmasın diye)
   const w = $("word");
   w.className = "word" + (item.kind === "sentence" ? " sentence" : "");
   w.innerHTML = "";
@@ -265,45 +265,58 @@ function noSupportMessage() {
     "ya da ebeveynine Ayarlar'dan yapay zekâ anahtarı girmesini söyle.", "try");
 }
 
-function basicCheck(prefix = "") {
+// Ses tanıma için "gevşek" biçim: tekrar eden harfleri tek say ("kaa" → "ka", "anne" → "ane")
+function squeeze(s) { return s.replace(/(.)\1+/g, "$1"); }
+
+// attempt: sessizlik olursa kullanıcıya hissettirmeden otomatik yeniden dinleme sayısı
+function basicCheck(prefix = "", attempt = 0) {
   if (!SR) { noSupportMessage(); return; }
-  const target = clean(current.text);
+  const target = squeeze(clean(current.text));
   const r = new SR();
   recognition = r;
   r.lang = "tr-TR";
   r.maxAlternatives = 5;
-  r.interimResults = false;
-  let got = false;
-  r.onstart = () => { setRecording(true); setMsg(prefix + "Dinliyorum... 👂"); };
+  r.interimResults = true;      // Konuşurken ara sonuçları da değerlendir (daha hızlı ve toleranslı)
+  r.manualStop = false;         // Çocuk "Bitir"e bastıysa true olur
+  let done = false;             // Sonuç verildi mi?
+  let lastHeard = "";           // Duyulan en yakın metin
+  r.onstart = () => { setRecording(true); setMsg(prefix + "Dinliyorum... 👂 Şimdi oku!"); };
   r.onresult = (e) => {
-    got = true;
-    // Tüm alternatiflerin en iyisini al
-    let best = "", bestSim = -1, accepted = false;
-    for (const alt of e.results[0]) {
-      const heard = clean(alt.transcript);
+    if (done) return;
+    const res = e.results[e.results.length - 1];
+    let accepted = false, bestSim = -1;
+    for (const alt of res) {
+      const heard = squeeze(clean(alt.transcript));
+      if (!heard) continue;
       const s = similarity(heard, target);
-      // Çok kısa hecelerde "içeriyor" da yeterli (ör. "kaa" → "ka")
+      // Kısa hecelerde "içeriyor / ile başlıyor" da yeterli (ör. "kaç" → "ka")
       if (s >= PASS_RATIO || (current.kind === "syl" && heard.includes(target))) accepted = true;
-      if (s > bestSim) { bestSim = s; best = heard; }
+      if (s > bestSim) { bestSim = s; lastHeard = heard; }
     }
-    if (accepted) onResult(true, randomPraise());
-    else onResult(false, hintMessage(target, best));
+    if (accepted) {               // Doğru: beklemeden sonuçlandır
+      done = true;
+      try { r.stop(); } catch (err) {}
+      onResult(true, randomPraise());
+    }
   };
   r.onerror = (e) => {
-    got = true;
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      done = true;
       setMsg("Mikrofona izin vermedin 🎤 Ebeveynine söyle: adres çubuğundaki kilit simgesinden " +
         "mikrofona izin versin.", "try");
-    } else if (e.error === "no-speech") {
-      onResult(false, "Seni duyamadım. Mikrofona biraz daha yakın oku! 🙂");
-    } else if (e.error !== "aborted") {
-      onResult(false, "Bir sorun oldu. Bir daha dener misin? 🙂");
+    } else if (e.error === "aborted") {
+      done = true;
     }
+    // "no-speech" ve diğer hatalar onend içinde ele alınır (otomatik tekrar)
   };
   r.onend = () => {
     setRecording(false);
     recognition = null;
-    if (!got) onResult(false, "Seni duyamadım. Bir daha dene! 🙂");
+    if (done) return;
+    done = true;
+    if (lastHeard) { onResult(false, hintMessage(target, lastHeard)); return; }   // Bir şey duyuldu ama yanlış
+    if (attempt < 2 && !r.manualStop) { basicCheck(prefix, attempt + 1); return; } // Sessizlik: sessizce tekrar dinle
+    onResult(false, "Sesini duyamadım 🎤 Mikrofona biraz yaklaş ve yüksek sesle oku. Hazır olunca tekrar bas!");
   };
   try { r.start(); } catch (e) { setRecording(false); }
 }
@@ -440,6 +453,7 @@ function onResult(ok, msg) {
   setMsg(msg, ok ? "good" : "try");
   speak(msg.replace(/[^\p{L}\p{N}\s.,!?'"-]/gu, ""), 0.9);
   if (!ok) return;
+  $("emoji").textContent = current.kind === "syl" ? "🌟" : current.emoji;   // Ödül olarak görseli göster
   state.score += 1;
   state.correct[state.level] = (state.correct[state.level] || 0) + 1;
   saveState();
@@ -516,7 +530,7 @@ $("next").onclick = nextItem;
 $("mic").onclick = () => {
   if (!current) return;
   // Kayıt sürüyorsa: durdur
-  if (recognition) { recognition.stop(); return; }
+  if (recognition) { recognition.manualStop = true; recognition.stop(); return; }
   if (mediaRec && mediaRec.state === "recording") { mediaRec.stop(); return; }
   if (busy) return;
   speechSynthesis.cancel();

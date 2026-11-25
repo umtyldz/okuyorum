@@ -1,20 +1,20 @@
-/* =====================================================================
-   service-worker.js — temel dosyaları önbelleğe alır (çevrimdışı çalışır).
-   Dosyalarda değişiklik yaptığınızda CACHE_VERSION sayısını artırın.
+﻿/* =====================================================================
+   service-worker.js â€” temel dosyalarÄ± Ã¶nbelleÄŸe alÄ±r (Ã§evrimdÄ±ÅŸÄ± Ã§alÄ±ÅŸÄ±r).
+   Dosyalarda deÄŸiÅŸiklik yaptÄ±ÄŸÄ±nÄ±zda CACHE_VERSION sayÄ±sÄ±nÄ± artÄ±rÄ±n.
    ===================================================================== */
-const CACHE_VERSION = "okuyorum-v2";
+const CACHE_VERSION = "okuyorum-v3";
 const FILES = [
   "./", "./index.html", "./style.css", "./app.js", "./words.js",
   "./manifest.json", "./icon-192.png", "./icon-512.png"
 ];
 
-// Kurulum: dosyaları önbelleğe ekle
+// Kurulum: dosyalarÄ± Ã¶nbelleÄŸe ekle
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE_VERSION).then((c) => c.addAll(FILES)));
   self.skipWaiting();
 });
 
-// Etkinleştirme: eski önbellekleri sil
+// EtkinleÅŸtirme: eski Ã¶nbellekleri sil
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
@@ -24,7 +24,7 @@ self.addEventListener("activate", (e) => {
   self.clients.claim();
 });
 
-// İstekler: aynı site dosyaları önce önbellekten; Gemini API gibi dış istekler ağdan.
+// Ä°stekler: aynÄ± site dosyalarÄ± Ã¶nce Ã¶nbellekten; Gemini API gibi dÄ±ÅŸ istekler aÄŸdan.
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
