@@ -68,14 +68,15 @@ button:active:not(:disabled) { transform: translateY(3px) scale(.98); }
 button:focus-visible { outline: 4px solid #1e1b4b; outline-offset: 2px; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 
-/* ---------- Üst durum şeridi ---------- */
+/* ---------- Alt durum şeridi ---------- */
 .ver {
   font: 700 13px/1.2 system-ui, -apple-system, sans-serif;
   background: rgba(43, 30, 74, 0.85);
   color: #fff;
   padding: 5px 14px;
   border-radius: 999px;
-  margin-bottom: 10px;
+  margin-top: 18px;
+  opacity: 0.8;
   backdrop-filter: blur(6px);
 }
 
