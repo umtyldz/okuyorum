@@ -2,7 +2,7 @@
    service-worker.js — temel dosyaları önbelleğe alır (çevrimdışı çalışır).
    Dosyalarda değişiklik yaptığınızda CACHE_VERSION sayısını artırın.
    ===================================================================== */
-const CACHE_VERSION = "okuyorum-v11";
+const CACHE_VERSION = "okuyorum-v12";
 const FILES = [
   "./", "./index.html", "./style.css", "./app.js", "./words.js",
   "./manifest.json", "./icon-192.png", "./icon-512.png"
@@ -24,15 +24,17 @@ self.addEventListener("activate", (e) => {
   self.clients.claim();
 });
 
-// İstekler: AĞ ÖNCELİKLİ — internet varsa hep en yeni dosya gelir (güncellemeler hemen görünür),
-// internet yoksa önbellekten çalışır (çevrimdışı). Gemini API gibi dış istekler karışmaz.
+// İstekler: AĞ ÖNCELİKLİ — internet varsa hep en yeni dosya gelir,
+// internet yoksa önbellekten çalışır. Sadece geçerli temel yanıtlar önbelleklenir.
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
   e.respondWith(
     fetch(req, { cache: "no-cache" }).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE_VERSION).then((c) => c.put(req, copy));
+      if (res && res.ok && res.type === "basic") {
+        const copy = res.clone();
+        caches.open(CACHE_VERSION).then((c) => c.put(req, copy));
+      }
       return res;
     }).catch(() => caches.match(req).then((hit) => hit || caches.match("./index.html")))
   );

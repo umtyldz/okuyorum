@@ -5,14 +5,14 @@ Backend yok; sadece statik dosyalar (HTML, CSS, vanilla JS). PWA olarak tablete 
 
 ## Nasıl çalışır?
 
-1. İlk açılışta **"Hangi harfe kadar geldin?"** ekranı çıkar. Çocuk (veya ebeveyn) öğrenilen son harfe dokunur; önceki harfler de seçilir.
-2. Uygulama yalnızca **seçili harflerden oluşan** hece, kelime ve cümleleri gösterir.
-3. 🔊 **Dinle** → kelimeyi yavaşça seslendirir. 🎤 **Oku** → çocuğun okuduğunu kontrol eder. ➡️ **Sonraki** → yeni öğe.
+1. İlk açılışta **"Hangi harfe kadar geldin?"** ekranı çıkar. Çocuk (veya ebeveyn) MEB 2024 ses gruplarından öğrenilen son harfe dokunur; önceki harfler de seçilir.
+2. Uygulama yalnızca **seçili harflerden oluşan** hece, kelime ve cümleleri gösterir. Okuma sırasında dikkat dağıtmaması için görsel gizlenir; doğru okunduğunda ödül olarak görünür.
+3. 🔊 **Dinle** → kelimeyi yavaşça seslendirir. 🎤 **Oku** → çocuğun okuduğunu kontrol eder. ⬅️ / ➡️ **Sonraki** → gezinme.
 4. Doğruysa konfeti + ⭐ + sesli tebrik; yanlışsa hangi sesin eksik olduğu nazikçe söylenir.
 5. Seviyeler: **Heceler → Kelimeler → Cümleler**. Puan ve ilerleme `localStorage`'da saklanır.
 
 ### İçeriği düzenleme
-- `words.js` → `LETTER_ORDER` (harf sırası, varsayılan MEB ilkokuma sırası), `WORDS` (kelime + emoji), `SENTENCES` (cümle + emoji).
+- `words.js` → `LETTER_GROUPS` / `LETTER_ORDER` (harf sırası, varsayılan MEB 2024 ses grupları), `WORDS` (kelime + emoji), `SENTENCES` (cümle + emoji).
 - Harf sırası uygulama içinden de değiştirilebilir: **⚙️ Ebeveyn → Harf sırası**.
 - Bir kelime/cümle, sadece seçili harflerden oluşuyorsa gösterilir. Yeni kelime eklemek için `["KELİME", "🙂"]` satırı eklemeniz yeterli (BÜYÜK harfle, `İ`/`I` ayrımına dikkat).
 
@@ -57,7 +57,7 @@ Sonra tarayıcıda `http://localhost:8000` açın (`localhost` mikrofon için g�
 1. https://aistudio.google.com/apikey adresine Google hesabınızla girin.
 2. **Create API key** ile anahtar oluşturun (`AIza...` ile başlar).
 3. Uygulamada **⚙️ Ebeveyn** panelini açın, anahtarı yapıştırın, **Kaydet**'e basın.
-4. Kullanılan model `app.js` başındaki `GEMINI_MODEL` sabitindedir; model adı değişirse oradan güncelleyin.
+4. Kullanılan modeller `app.js` başındaki `GEMINI_MODELS` listesindedir; hiçbiri çalışmazsa uygulama güncel modelleri otomatik olarak Google'dan sorgular.
 
 ## 🔐 Güvenlik notu
 
