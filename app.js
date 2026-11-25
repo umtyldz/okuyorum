@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v20";
+const APP_VERSION = "v21";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -329,27 +329,43 @@ function updateNavButtons() {
   $("prev").disabled = shownPos <= 0;
 }
 
-function transitionStage(dir, applyFn) {
-  const stage = $("stage");
+const CARD_FX = ["slide", "zoom", "bounce", "flip", "swing", "rise"];
+let lastCardFx = "";
+
+function clearCardFx() {
+  const card = $("card");
+  [...card.classList].forEach((c) => { if (c.startsWith("fx-")) card.classList.remove(c); });
+}
+
+function transitionCard(dir, applyFn) {
+  const card = $("card");
   const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   clearTimeout(transTimer);
-  stage.classList.remove("out-left", "out-right", "in-left", "in-right");
+  clearCardFx();
   if (dir === "none" || reduced) {
     applyFn();
     return;
   }
-  stage.classList.add(dir === "next" ? "out-left" : "out-right");
+  const pool = CARD_FX.filter((f) => f !== lastCardFx);
+  const fx = pool[Math.floor(Math.random() * pool.length)];
+  lastCardFx = fx;
+  const directional = fx === "slide" || fx === "flip" || fx === "swing";
+  const outClass = directional ? `fx-${fx}-out-${dir === "next" ? "l" : "r"}` : `fx-${fx}-out`;
+  const inClass = directional ? `fx-${fx}-in-${dir === "next" ? "r" : "l"}` : `fx-${fx}-in`;
+
+  card.classList.add(outClass);
   transTimer = setTimeout(() => {
-    stage.classList.remove("out-left", "out-right");
+    clearCardFx();
     applyFn();
-    void stage.offsetWidth;
-    stage.classList.add(dir === "next" ? "in-right" : "in-left");
+    void card.offsetWidth;
+    card.classList.add(inClass);
+    transTimer = setTimeout(clearCardFx, 460);
   }, 220);
 }
 
 function nextItem(animate = true) {
   stopAll();
-  transitionStage(animate ? "next" : "none", () => {
+  transitionCard(animate ? "next" : "none", () => {
     if (shownPos < shownList.length - 1) {
       shownPos++;
       showItem(shownList[shownPos]);
@@ -366,7 +382,7 @@ function nextItem(animate = true) {
 function prevItem(animate = true) {
   if (shownPos <= 0) return;
   stopAll();
-  transitionStage(animate ? "prev" : "none", () => {
+  transitionCard(animate ? "prev" : "none", () => {
     shownPos--;
     showItem(shownList[shownPos]);
   });
@@ -448,7 +464,7 @@ function stopAll() {
   clearTimeout(autoNextTimer);
   clearTimeout(transTimer);
   clearListenTimer();
-  $("stage").classList.remove("out-left", "out-right");
+  clearCardFx();
   stopSilenceDetector();
   if (aiAbortCtrl) { aiAbortCtrl.userAborted = true; aiAbortCtrl.abort(); aiAbortCtrl = null; }
   if (recognition) {

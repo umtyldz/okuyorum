@@ -145,28 +145,91 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   box-shadow: var(--shadow);
   border: 3px solid rgba(255, 255, 255, 0.9);
   overflow: hidden;
+  will-change: transform, opacity;
+  transform-origin: center center;
 }
 
-.stage {
-  will-change: transform, opacity;
+/* 1) Slide */
+.card.fx-slide-out-l { animation: fxSlideOutL .22s ease forwards; }
+.card.fx-slide-out-r { animation: fxSlideOutR .22s ease forwards; }
+.card.fx-slide-in-r { animation: fxSlideInR .44s cubic-bezier(.22, 1, .36, 1) both; }
+.card.fx-slide-in-l { animation: fxSlideInL .44s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes fxSlideOutL { to { opacity: 0; transform: translateX(-70px) rotate(-2deg) scale(.95); } }
+@keyframes fxSlideOutR { to { opacity: 0; transform: translateX(70px) rotate(2deg) scale(.95); } }
+@keyframes fxSlideInR {
+  from { opacity: 0; transform: translateX(80px) rotate(2deg) scale(.95); }
+  70% { opacity: 1; transform: translateX(-6px) rotate(-.5deg) scale(1.01); }
+  to { opacity: 1; transform: translateX(0) rotate(0) scale(1); }
 }
-.stage.out-left { animation: slideOutLeft .22s ease forwards; }
-.stage.out-right { animation: slideOutRight .22s ease forwards; }
-.stage.in-right { animation: slideInRight .38s cubic-bezier(.22, 1, .36, 1) both; }
-.stage.in-left { animation: slideInLeft .38s cubic-bezier(.22, 1, .36, 1) both; }
-@keyframes slideOutLeft {
-  to { opacity: 0; transform: translateX(-34px) scale(.96); }
+@keyframes fxSlideInL {
+  from { opacity: 0; transform: translateX(-80px) rotate(-2deg) scale(.95); }
+  70% { opacity: 1; transform: translateX(6px) rotate(.5deg) scale(1.01); }
+  to { opacity: 1; transform: translateX(0) rotate(0) scale(1); }
 }
-@keyframes slideOutRight {
-  to { opacity: 0; transform: translateX(34px) scale(.96); }
+
+/* 2) Zoom */
+.card.fx-zoom-out { animation: fxZoomOut .22s ease forwards; }
+.card.fx-zoom-in { animation: fxZoomIn .44s cubic-bezier(.34, 1.56, .64, 1) both; }
+@keyframes fxZoomOut { to { opacity: 0; transform: scale(.78); } }
+@keyframes fxZoomIn {
+  from { opacity: 0; transform: scale(.78); }
+  70% { opacity: 1; transform: scale(1.03); }
+  to { opacity: 1; transform: scale(1); }
 }
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(38px) scale(.96); }
-  to { opacity: 1; transform: translateX(0) scale(1); }
+
+/* 3) Bounce */
+.card.fx-bounce-out { animation: fxBounceOut .22s ease forwards; }
+.card.fx-bounce-in { animation: fxBounceIn .44s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes fxBounceOut { to { opacity: 0; transform: translateY(-48px) scale(.94); } }
+@keyframes fxBounceIn {
+  0% { opacity: 0; transform: translateY(-60px) scale(.92); }
+  65% { opacity: 1; transform: translateY(10px) scale(1.02); }
+  85% { transform: translateY(-4px) scale(.99); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
-@keyframes slideInLeft {
-  from { opacity: 0; transform: translateX(-38px) scale(.96); }
-  to { opacity: 1; transform: translateX(0) scale(1); }
+
+/* 4) 3D Kart Çevirme */
+.card.fx-flip-out-l { animation: fxFlipOutL .22s ease forwards; }
+.card.fx-flip-out-r { animation: fxFlipOutR .22s ease forwards; }
+.card.fx-flip-in-r { animation: fxFlipInR .44s cubic-bezier(.22, 1, .36, 1) both; }
+.card.fx-flip-in-l { animation: fxFlipInL .44s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes fxFlipOutL { to { opacity: 0; transform: perspective(1000px) rotateY(-42deg) scale(.92); } }
+@keyframes fxFlipOutR { to { opacity: 0; transform: perspective(1000px) rotateY(42deg) scale(.92); } }
+@keyframes fxFlipInR {
+  from { opacity: 0; transform: perspective(1000px) rotateY(48deg) scale(.92); }
+  to { opacity: 1; transform: perspective(1000px) rotateY(0) scale(1); }
+}
+@keyframes fxFlipInL {
+  from { opacity: 0; transform: perspective(1000px) rotateY(-48deg) scale(.92); }
+  to { opacity: 1; transform: perspective(1000px) rotateY(0) scale(1); }
+}
+
+/* 5) Swing / Sallanma */
+.card.fx-swing-out-l { animation: fxSwingOutL .22s ease forwards; }
+.card.fx-swing-out-r { animation: fxSwingOutR .22s ease forwards; }
+.card.fx-swing-in-r { animation: fxSwingInR .44s cubic-bezier(.22, 1, .36, 1) both; }
+.card.fx-swing-in-l { animation: fxSwingInL .44s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes fxSwingOutL { to { opacity: 0; transform: rotate(-6deg) translate(-30px, 14px) scale(.94); } }
+@keyframes fxSwingOutR { to { opacity: 0; transform: rotate(6deg) translate(30px, 14px) scale(.94); } }
+@keyframes fxSwingInR {
+  0% { opacity: 0; transform: rotate(7deg) translateY(20px) scale(.93); }
+  65% { opacity: 1; transform: rotate(-2.5deg) translateY(-4px) scale(1.01); }
+  100% { opacity: 1; transform: rotate(0) translateY(0) scale(1); }
+}
+@keyframes fxSwingInL {
+  0% { opacity: 0; transform: rotate(-7deg) translateY(20px) scale(.93); }
+  65% { opacity: 1; transform: rotate(2.5deg) translateY(-4px) scale(1.01); }
+  100% { opacity: 1; transform: rotate(0) translateY(0) scale(1); }
+}
+
+/* 6) Rise */
+.card.fx-rise-out { animation: fxRiseOut .22s ease forwards; }
+.card.fx-rise-in { animation: fxRiseIn .44s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes fxRiseOut { to { opacity: 0; transform: translateY(44px) scale(.94); } }
+@keyframes fxRiseIn {
+  from { opacity: 0; transform: translateY(54px) scale(.94); }
+  75% { opacity: 1; transform: translateY(-5px) scale(1.01); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Okuma sırasında tamamen gizli; doğru okuyunca ödül emojisi görünür */
