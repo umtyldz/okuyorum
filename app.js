@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v15";
+const APP_VERSION = "v16";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -242,7 +242,7 @@ function speak(text, rate = 0.8) {
   speechSynthesis.speak(u);
 }
 
-function setMsg(text, cls = "", source = "") {
+function setMsg(text, cls = "", source = "", heard = "") {
   $("msg").textContent = text;
   $("msgWrap").className = "msg-wrap" + (cls ? " " + cls : "");
   const srcEl = $("msgSource");
@@ -251,6 +251,13 @@ function setMsg(text, cls = "", source = "") {
     srcEl.hidden = false;
   } else {
     srcEl.hidden = true;
+  }
+  const heardEl = $("msgHeard");
+  if (heard) {
+    heardEl.textContent = `Duyulan: "${heard}"`;
+    heardEl.hidden = false;
+  } else {
+    heardEl.hidden = true;
   }
 }
 
@@ -413,6 +420,7 @@ function basicCheck(prefix = "", attempt = 0, myId = ++activeCheckId) {
   r.manualStopFn = () => { manualStop = true; try { r.stop(); } catch (e) {} };
   let done = false;
   let lastHeard = "";
+  let lastRawHeard = "";
 
   r.onstart = () => {
     if (myId !== activeCheckId) return;
@@ -426,18 +434,22 @@ function basicCheck(prefix = "", attempt = 0, myId = ++activeCheckId) {
     // Birden fazla sonuç segmenti varsa (özellikle cümlelerde) birleştir
     const fullParts = [];
     for (let k = 0; k < e.results.length; k++) fullParts.push(e.results[k][0].transcript);
-    const combined = squeeze(clean(fullParts.join(" ")));
+    const fullRaw = fullParts.join(" ").trim();
     const latest = e.results[e.results.length - 1];
 
     let accepted = false, bestSim = -1;
-    const candidates = [combined];
-    for (const alt of latest) candidates.push(squeeze(clean(alt.transcript)));
+    const candidates = [{ raw: fullRaw, norm: squeeze(clean(fullRaw)) }];
+    for (const alt of latest) {
+      const raw = String(alt.transcript || "").trim();
+      candidates.push({ raw, norm: squeeze(clean(raw)) });
+    }
 
-    for (const heard of candidates) {
+    for (const c of candidates) {
+      const heard = c.norm;
       if (!heard) continue;
       const s = similarity(heard, target);
       if (s >= PASS_RATIO || (current.kind === "syl" && heard.includes(target))) accepted = true;
-      if (s > bestSim) { bestSim = s; lastHeard = heard; }
+      if (s > bestSim) { bestSim = s; lastHeard = heard; lastRawHeard = c.raw; }
     }
     if (accepted) {
       done = true;
@@ -469,7 +481,7 @@ function basicCheck(prefix = "", attempt = 0, myId = ++activeCheckId) {
     done = true;
     if (lastHeard) {
       setRecording(false); busy = false;
-      onResult(false, WRONG_MSG, "🎙️ Tarayıcı");
+      onResult(false, WRONG_MSG, "🎙️ Tarayıcı", lastRawHeard);
       return;
     }
     if (attempt < 2 && !manualStop) {
@@ -596,7 +608,8 @@ async function aiCheck(key) {
       if (myId !== activeCheckId) return;
       const sec = ((Date.now() - t0) / 1000).toFixed(1);
       busy = false;
-      onResult(!!out.dogru, out.dogru ? randomPraise() : WRONG_MSG, `🤖 Yapay zekâ · ${sec} sn`);
+      const heard = out.dogru ? "" : String(out.duyulan || "").trim();
+      onResult(!!out.dogru, out.dogru ? randomPraise() : WRONG_MSG, `🤖 Yapay zekâ · ${sec} sn`, heard);
     } catch (err) {
       if (myId !== activeCheckId || err.name === "AbortError") { busy = false; return; }
       console.error("Gemini hatası:", err);
@@ -657,10 +670,10 @@ async function askGemini(key, target, audio) {
   const prompt =
     `Sen 6-8 yaş arası Türk çocuğun okuma öğretmenisin. Hedef metin: "${target}". ` +
     `Ses kaydını dinle; çocuk heceleyerek, yavaş veya hafif hatalı telaffuzla okuyabilir, büyük ölçüde doğruysa kabul et. ` +
-    `Yorum yazma, sadece JSON ver: {"dogru":true} veya {"dogru":false}`;
+    `Yorum yazma. Doğruysa sadece {"dogru":true}, yanlışsa sadece duyduğun metinle {"dogru":false,"duyulan":"..."} (ses anlaşılmadıysa "") ver.`;
   const res = await callGemini(key, {
     contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: audio.mime, data: audio.b64 } }] }],
-    generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 32 }
+    generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 48 }
   });
   const data = res.data;
   const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
@@ -778,8 +791,8 @@ function formatSpeechRate(r) {
   return `${r.toFixed(2)}x · ${tag}`;
 }
 
-function onResult(ok, msg, source = "") {
-  setMsg(msg, ok ? "good" : "try", source);
+function onResult(ok, msg, source = "", heard = "") {
+  setMsg(msg, ok ? "good" : "try", source, ok ? "" : heard);
   speak(msg.replace(/[^\p{L}\p{N}\s.,!?'"-]/gu, ""), getSpeechRate());
   if (!ok) return;
 
