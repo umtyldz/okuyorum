@@ -16,6 +16,9 @@ const GEMINI_MODEL = "gemini-2.5-flash";   // Model adı değişirse sadece bura
 const MAX_RECORD_MS = 6000;                // Yapay zekâ modunda en fazla kayıt süresi
 const PASS_RATIO = 0.75;                   // Levenshtein benzerlik eşiği
 const ROUND_SIZE = 10;                     // Her 10 doğru cevap = 1 tur
+// GEÇİCİ test: yapay zekâ cevap verdiğinde mesajın başına eklenir (hem yazılır hem söylenir).
+// Kaldırmak için "" yapın.
+const AI_DEBUG_PREFIX = "Google: ";
 
 const LS = {
   state: "okuyorum.state",
@@ -393,7 +396,7 @@ async function aiCheck(key) {
       const audio = await toGeminiAudio(blob);          // WAV'a çevir (en uyumlu biçim)
       const out = await askGemini(key, current.text, audio);
       busy = false;
-      onResult(!!out.dogru, out.mesaj || (out.dogru ? randomPraise() : "Bir daha dene! 🙂"));
+      onResult(!!out.dogru, AI_DEBUG_PREFIX + (out.mesaj || (out.dogru ? randomPraise() : "Bir daha dene! 🙂")));
     } catch (err) {
       // Hata olursa anahtarsız moda düş
       console.error("Gemini hatası:", err);
