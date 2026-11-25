@@ -14,9 +14,11 @@
    "Ebeveyn" bölümünden "Harf sırası" kutusuna yazın (tarayıcıda saklanır).
    --------------------------------------------------------------------- */
 const LETTER_ORDER = [
-  "E", "L", "A", "K", "İ", "N", "O", "M", "U", "T",
-  "Ü", "Ö", "R", "I", "D", "S", "B", "Z", "Y", "Ç",
-  "Ş", "G", "H", "C", "P", "V", "F", "J", "Ğ"
+  "A", "N", "E", "T", "İ", "L",
+  "O", "K", "U", "R", "I", "M",
+  "Ü", "S", "Ö", "Y", "D", "Z",
+  "Ç", "B", "G", "C", "Ş",
+  "P", "H", "V", "Ğ", "F", "J"
 ];
 
 /* Ünlü (sesli) harfler — hece üretimi ve hece bölme için kullanılır */
