@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v14";
+const APP_VERSION = "v15";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -128,23 +128,6 @@ function editMatrix(a, b) {
     for (let j = 1; j <= b.length; j++)
       m[i][j] = Math.min(m[i - 1][j] + 1, m[i][j - 1] + 1, m[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
   return m;
-}
-
-// Hedefte hangi sesin (harfin) atlandığını veya yanlış söylendiğini bulur
-function findMissingLetter(target, heard) {
-  const m = editMatrix(target, heard);
-  let i = target.length, j = heard.length;
-  const bad = [];
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && m[i][j] === m[i - 1][j - 1] + (target[i - 1] === heard[j - 1] ? 0 : 1)) {
-      if (target[i - 1] !== heard[j - 1]) bad.push(i - 1);
-      i--; j--;
-    } else if (i > 0 && m[i][j] === m[i - 1][j] + 1) {
-      bad.push(i - 1); i--;
-    } else { j--; }
-  }
-  if (!bad.length) return null;
-  return target[Math.min(...bad)].toLocaleUpperCase("tr-TR");
 }
 
 // Türkçe hece bölme (3 ünsüzlü kümeleri de doğru ayırır: E-LEK-TRİK, TÜRK-ÇE)
@@ -486,7 +469,7 @@ function basicCheck(prefix = "", attempt = 0, myId = ++activeCheckId) {
     done = true;
     if (lastHeard) {
       setRecording(false); busy = false;
-      onResult(false, hintMessage(target, lastHeard), "🎙️ Tarayıcı");
+      onResult(false, WRONG_MSG, "🎙️ Tarayıcı");
       return;
     }
     if (attempt < 2 && !manualStop) {
@@ -500,15 +483,7 @@ function basicCheck(prefix = "", attempt = 0, myId = ++activeCheckId) {
   try { r.start(); } catch (e) { setRecording(false); busy = false; }
 }
 
-function hintMessage(target, heard) {
-  if (!heard) return "Seni duyamadım. Bir daha dene! 🙂";
-  const letter = findMissingLetter(target, heard);
-  if (letter) {
-    return `Çok yaklaştın! "${letter}" sesini biraz daha net söyle. Haydi bir daha! 💪`;
-  }
-  return "Neredeyse oldu! Bir daha deneyelim! 💪";
-}
-
+const WRONG_MSG = "Yanlış oldu, tekrar dene! 💪";
 const PRAISES = ["Harika! Doğru okudun!", "Bravo sana!", "Çok güzel okudun!", "Süpersin!", "Aferin sana!"];
 function randomPraise() { return PRAISES[Math.floor(Math.random() * PRAISES.length)] + " 🎉"; }
 
@@ -621,7 +596,7 @@ async function aiCheck(key) {
       if (myId !== activeCheckId) return;
       const sec = ((Date.now() - t0) / 1000).toFixed(1);
       busy = false;
-      onResult(!!out.dogru, out.mesaj || (out.dogru ? randomPraise() : "Bir daha dene! 🙂"), `🤖 Yapay zekâ · ${sec} sn`);
+      onResult(!!out.dogru, out.dogru ? randomPraise() : WRONG_MSG, `🤖 Yapay zekâ · ${sec} sn`);
     } catch (err) {
       if (myId !== activeCheckId || err.name === "AbortError") { busy = false; return; }
       console.error("Gemini hatası:", err);
@@ -680,13 +655,12 @@ function blobToBase64(blob) {
 
 async function askGemini(key, target, audio) {
   const prompt =
-    `Sen 6-8 yaş arası Türk çocuğa okuma öğreten sabırlı öğretmensin. Hedef: "${target}". ` +
-    `Çocuk heceleyerek veya yavaş okuyabilir; büyük ölçüde doğruysa "dogru":true ve kısa tebrik yaz. ` +
-    `Yanlış/sessizse "dogru":false, hangi sesin eksik olduğunu nazikçe söyle ve teşvik et. ` +
-    `En fazla 2 kısa Türkçe cümle, sadece JSON: {"dogru":bool,"mesaj":"..."}`;
+    `Sen 6-8 yaş arası Türk çocuğun okuma öğretmenisin. Hedef metin: "${target}". ` +
+    `Ses kaydını dinle; çocuk heceleyerek, yavaş veya hafif hatalı telaffuzla okuyabilir, büyük ölçüde doğruysa kabul et. ` +
+    `Yorum yazma, sadece JSON ver: {"dogru":true} veya {"dogru":false}`;
   const res = await callGemini(key, {
     contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: audio.mime, data: audio.b64 } }] }],
-    generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 120 }
+    generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 32 }
   });
   const data = res.data;
   const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
