@@ -30,10 +30,12 @@
 
   <!-- Ana okuma kartı -->
   <main class="card">
-    <!-- Doğru okuyunca ödül emojisi burada görünür; okuma sırasında tamamen gizli -->
-    <div id="reward" class="reward" aria-hidden="true"></div>
+    <div id="stage" class="stage">
+      <!-- Doğru okuyunca ödül emojisi burada görünür; okuma sırasında tamamen gizli -->
+      <div id="reward" class="reward" aria-hidden="true"></div>
 
-    <div id="word" class="word" aria-live="polite"></div>
+      <div id="word" class="word" aria-live="polite"></div>
+    </div>
 
     <!-- Yapay zekâ kayıt süresi geri sayım çubuğu -->
     <div id="recTrack" class="rec-track" hidden><div id="recBar"></div></div>
@@ -65,7 +67,7 @@
 
   <!-- Ebeveyn bölümü (açılır panel) -->
   <details id="parent" class="parent">
-    <summary>⚙️ Ebeveyn</summary>
+    <summary id="parentSummary">⚙️ Ebeveyn</summary>
 
     <section class="parent-section">
       <h3>🤖 Yapay zekâ modu (isteğe bağlı)</h3>
@@ -117,6 +119,21 @@
       <div id="letterGrid" class="letter-grid"></div>
       <div id="pickerInfo" class="picker-info"></div>
       <button id="startBtn" class="btn btn-start" type="button">▶️ Başla</button>
+    </div>
+  </div>
+
+  <!-- Ebeveyn matematik kilidi -->
+  <div id="gateModal" class="overlay" hidden>
+    <div class="picker-box gate-box" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+      <button id="gateClose" class="picker-close" type="button" aria-label="Kapat">✕</button>
+      <h2 id="gateTitle">🔒 Ebeveyn Kontrolü</h2>
+      <p>Devam etmek için çarpma sorusunu çözün:</p>
+      <div id="gateQuestion" class="gate-q"></div>
+      <form id="gateForm" class="gate-form">
+        <input id="gateAnswer" class="gate-input" type="number" inputmode="numeric" autocomplete="off" placeholder="Cevap">
+        <button id="gateSubmit" class="btn btn-start" type="submit">Giriş</button>
+      </form>
+      <div id="gateErr" class="gate-err" aria-live="polite"></div>
     </div>
   </div>
 

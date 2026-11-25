@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v18";
+const APP_VERSION = "v19";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -94,6 +94,11 @@ let busy = false;          // Kayıt veya API değerlendirmesi sürerken true
 let activeCheckId = 0;     // Eski asenkron cevapların yeni karta yazılmasını önler
 let aiAbortCtrl = null;
 let roundTimer = null;
+let autoNextTimer = null;
+let transTimer = null;
+let listenTimer = null;
+let listenCountdown = 0;
+let gateExpected = 0;
 
 /* ---------- 2) YARDIMCILAR ---------- */
 
@@ -261,8 +266,45 @@ function setMsg(text, cls = "", source = "", heard = "") {
   }
 }
 
+function clearListenTimer() {
+  if (listenTimer) { clearInterval(listenTimer); listenTimer = null; }
+  listenCountdown = 0;
+}
+
+function renderListenBtn() {
+  const b = $("listen");
+  if (!current) { b.disabled = true; b.textContent = "🔒 Dinle"; return; }
+  if (current.solved || current.listenUnlocked) {
+    b.disabled = false;
+    b.textContent = "🔊 Dinle";
+  } else if (listenCountdown > 0) {
+    b.disabled = true;
+    b.textContent = `🔒 Dinle (${listenCountdown})`;
+  } else {
+    b.disabled = true;
+    b.textContent = "🔒 Dinle";
+  }
+}
+
+// İlk yanlış denemeden 5 saniye sonra Dinle düğmesinin kilidini açar
+function scheduleListenUnlock() {
+  if (!current || current.solved || current.listenUnlocked || listenTimer) return;
+  listenCountdown = 5;
+  renderListenBtn();
+  listenTimer = setInterval(() => {
+    listenCountdown--;
+    if (listenCountdown <= 0) {
+      clearListenTimer();
+      if (current) current.listenUnlocked = true;
+    }
+    renderListenBtn();
+  }, 1000);
+}
+
 function showItem(item, note = "") {
   current = item;
+  clearListenTimer();
+  renderListenBtn();
   $("reward").textContent = item.solved ? (item.kind === "syl" ? "🌟" : item.emoji) : "";
   const w = $("word");
   w.className = "word" + (item.kind === "sentence" ? " sentence" : "");
@@ -277,7 +319,6 @@ function showItem(item, note = "") {
   } else {
     w.textContent = item.text;
   }
-  w.classList.remove("bounce"); void w.offsetWidth; w.classList.add("bounce");
   setMsg(note || (item.kind === "sentence" ? "Cümleyi oku!" : "Mikrofona bas ve oku!"));
   updateNavButtons();
 }
@@ -288,31 +329,52 @@ function updateNavButtons() {
   $("prev").disabled = shownPos <= 0;
 }
 
-function nextItem() {
-  stopAll();
-  if (shownPos < shownList.length - 1) {
-    shownPos++;
-    showItem(shownList[shownPos]);
+function transitionStage(dir, applyFn) {
+  const stage = $("stage");
+  const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  clearTimeout(transTimer);
+  stage.classList.remove("out-left", "out-right", "in-left", "in-right");
+  if (dir === "none" || reduced) {
+    applyFn();
     return;
   }
-  const { item, note } = pickNext();
-  shownList.push(item);
-  if (shownList.length > 50) shownList.shift();
-  shownPos = shownList.length - 1;
-  showItem(item, note);
+  stage.classList.add(dir === "next" ? "out-left" : "out-right");
+  transTimer = setTimeout(() => {
+    stage.classList.remove("out-left", "out-right");
+    applyFn();
+    void stage.offsetWidth;
+    stage.classList.add(dir === "next" ? "in-right" : "in-left");
+  }, 220);
 }
 
-function prevItem() {
+function nextItem(animate = true) {
   stopAll();
-  if (shownPos > 0) {
+  transitionStage(animate ? "next" : "none", () => {
+    if (shownPos < shownList.length - 1) {
+      shownPos++;
+      showItem(shownList[shownPos]);
+      return;
+    }
+    const { item, note } = pickNext();
+    shownList.push(item);
+    if (shownList.length > 50) shownList.shift();
+    shownPos = shownList.length - 1;
+    showItem(item, note);
+  });
+}
+
+function prevItem(animate = true) {
+  if (shownPos <= 0) return;
+  stopAll();
+  transitionStage(animate ? "prev" : "none", () => {
     shownPos--;
     showItem(shownList[shownPos]);
-  }
+  });
 }
 
 function newSession() {
   shownList = []; shownPos = -1; recentIds = [];
-  nextItem();
+  nextItem(false);
 }
 
 function spokenText(item) {
@@ -383,6 +445,10 @@ function stopAll() {
   clearTimeout(retryTimer);
   clearTimeout(recTimer);
   clearTimeout(roundTimer);
+  clearTimeout(autoNextTimer);
+  clearTimeout(transTimer);
+  clearListenTimer();
+  $("stage").classList.remove("out-left", "out-right");
   stopSilenceDetector();
   if (aiAbortCtrl) { aiAbortCtrl.userAborted = true; aiAbortCtrl.abort(); aiAbortCtrl = null; }
   if (recognition) {
@@ -882,28 +948,38 @@ function formatSpeechRate(r) {
 function onResult(ok, msg, source = "", heard = "") {
   setMsg(msg, ok ? "good" : "try", source, heard);
   speak(msg.replace(/[^\p{L}\p{N}\s.,!?'"-]/gu, ""), getSpeechRate());
-  if (!ok) return;
+  if (!ok) {
+    scheduleListenUnlock();
+    return;
+  }
 
+  clearListenTimer();
   // Ödül görselini şimdi göster (okumadan önce gizliydi)
   $("reward").textContent = current.kind === "syl" ? "🌟" : current.emoji;
   burstConfetti();
 
-  if (current.solved) return; // Aynı karttan tekrar puan yazma
-  current.solved = true;
-  state.score += 1;
-  state.correct[state.level] = (state.correct[state.level] || 0) + 1;
-  saveState();
+  let completedRound = false;
+  if (!current.solved) {
+    current.solved = true;
+    renderListenBtn();
+    state.score += 1;
+    state.correct[state.level] = (state.correct[state.level] || 0) + 1;
+    saveState();
 
-  const scoreEl = $("score");
-  scoreEl.classList.remove("pop"); void scoreEl.offsetWidth; scoreEl.classList.add("pop");
+    const scoreEl = $("score");
+    scoreEl.classList.remove("pop"); void scoreEl.offsetWidth; scoreEl.classList.add("pop");
 
-  const completedRound = state.correct[state.level] % ROUND_SIZE === 0;
-  renderHeader(completedRound);
-  if (completedRound) {
-    roundTimer = setTimeout(() => {
-      setMsg("🏆 Tur tamam! 10 doğru yaptın! Üstteki seviyelerden yenisini deneyebilirsin.", "good", source);
-    }, 1800);
+    completedRound = state.correct[state.level] % ROUND_SIZE === 0;
+    renderHeader(completedRound);
+    if (completedRound) {
+      roundTimer = setTimeout(() => {
+        setMsg("🏆 Tur tamam! 10 doğru yaptın! Üstteki seviyelerden yenisini deneyebilirsin.", "good", source);
+      }, 1800);
+    }
   }
+
+  clearTimeout(autoNextTimer);
+  autoNextTimer = setTimeout(() => nextItem(true), completedRound ? 3200 : 2100);
 }
 
 // --- Konfeti (canvas parçacıkları) ---
@@ -1014,13 +1090,14 @@ $("picker").onclick = (e) => { if (e.target === $("picker")) closePicker(); };
 
 // --- Ana düğmeler ---
 $("listen").onclick = () => {
-  if (!current) return;
+  if (!current || (!current.solved && !current.listenUnlocked)) return;
   const r = getSpeechRate();
   speak(spokenText(current), Math.max(0.5, current.kind === "sentence" ? r * 0.9 : r * 0.82));
 };
-$("next").onclick = nextItem;
-$("prev").onclick = prevItem;
+$("next").onclick = () => nextItem(true);
+$("prev").onclick = () => prevItem(true);
 $("mic").onclick = () => {
+  clearTimeout(autoNextTimer);
   if (!current) return;
   if (recognition && recognition.manualStopFn) { recognition.manualStopFn(); return; }
   if (mediaRec && mediaRec.state === "recording") { mediaRec.stop(); return; }
@@ -1041,17 +1118,62 @@ document.querySelectorAll(".lvl").forEach((b) => {
 
 // --- Klavye kısayolları ---
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("gateModal").hidden) { closeGate(); return; }
   const tag = document.activeElement ? document.activeElement.tagName : "";
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
   if (e.key === "Escape" && !$("picker").hidden) { closePicker(); return; }
-  if (!$("picker").hidden) return;
-  if (e.key === "ArrowRight") { e.preventDefault(); nextItem(); }
-  else if (e.key === "ArrowLeft") { e.preventDefault(); prevItem(); }
+  if (!$("picker").hidden || !$("gateModal").hidden) return;
+  if (e.key === "ArrowRight") { e.preventDefault(); nextItem(true); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); prevItem(true); }
   else if (e.code === "Space" && tag !== "BUTTON" && tag !== "SUMMARY") {
     e.preventDefault();
     $("mic").click();
   }
 });
+
+// --- Ebeveyn matematik kilidi ---
+function newGateQuestion() {
+  const a = 3 + Math.floor(Math.random() * 7);
+  const b = 3 + Math.floor(Math.random() * 7);
+  gateExpected = a * b;
+  $("gateQuestion").textContent = `${a} × ${b} = ?`;
+  $("gateAnswer").value = "";
+}
+
+function openGate() {
+  newGateQuestion();
+  $("gateErr").textContent = "";
+  $("gateModal").hidden = false;
+  setTimeout(() => $("gateAnswer").focus(), 30);
+}
+
+function closeGate() {
+  $("gateModal").hidden = true;
+}
+
+$("parentSummary").onclick = (e) => {
+  if (!$("parent").open) {
+    e.preventDefault();
+    openGate();
+  }
+};
+$("gateClose").onclick = closeGate;
+$("gateModal").onclick = (e) => { if (e.target === $("gateModal")) closeGate(); };
+$("gateForm").onsubmit = (e) => {
+  e.preventDefault();
+  const val = parseInt($("gateAnswer").value, 10);
+  if (val === gateExpected) {
+    closeGate();
+    $("parent").open = true;
+    $("parent").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } else {
+    $("gateErr").textContent = "Yanlış cevap, yeni soruyla tekrar deneyin.";
+    const box = $("gateModal").querySelector(".gate-box");
+    box.classList.remove("shake"); void box.offsetWidth; box.classList.add("shake");
+    newGateQuestion();
+    $("gateAnswer").focus();
+  }
+};
 
 // --- Ebeveyn paneli ---
 function renderKeyState(customText = "") {
