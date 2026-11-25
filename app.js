@@ -142,7 +142,7 @@ function buildPool(level) {
     return WORDS.filter(([w]) => usesOnly(w, set) && !seen.has(w) && seen.add(w))
       .map(([w, e]) => ({ text: w, emoji: e, kind: "word" }));
   }
-  return SENTENCES.filter(([s]) => usesOnly(s, set))
+  return SENTENCES.filter(([s]) => usesOnly(s, set) && !seen.has(s) && seen.add(s))
     .map(([s, e]) => ({ text: s, emoji: e, kind: "sentence" }));
 }
 
