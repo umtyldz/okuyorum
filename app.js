@@ -12,9 +12,9 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v12";
-const GEMINI_TIMEOUT_MS = 12000;
-const DISCOVER_TIMEOUT_MS = 10000;
+const APP_VERSION = "v13";
+const GEMINI_TIMEOUT_MS = 10000;
+const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
   "gemini-2.5-flash",
   "gemini-flash-latest",
@@ -367,6 +367,12 @@ function renderStatusBar() {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
 let mediaRec = null, mediaStream = null, recTimer = null, retryTimer = null;
+let vadTimer = null, vadCtx = null;
+
+function stopSilenceDetector() {
+  if (vadTimer) { clearInterval(vadTimer); vadTimer = null; }
+  if (vadCtx) { try { vadCtx.close().catch(() => {}); } catch (e) {} vadCtx = null; }
+}
 
 function setRecording(on, showTimer = false) {
   const b = $("mic");
@@ -387,6 +393,7 @@ function stopAll() {
   clearTimeout(retryTimer);
   clearTimeout(recTimer);
   clearTimeout(roundTimer);
+  stopSilenceDetector();
   if (aiAbortCtrl) { aiAbortCtrl.userAborted = true; aiAbortCtrl.abort(); aiAbortCtrl = null; }
   if (recognition) {
     try { recognition.onresult = recognition.onerror = recognition.onend = null; recognition.abort(); } catch (e) {}
@@ -512,6 +519,54 @@ function getDebugPrefix() {
   return v === null ? true : v === "1";
 }
 
+// Konuşma bitince otomatik durdurma (sessizlik algılama / VAD)
+function startSilenceDetector(stream, onSilence) {
+  stopSilenceDetector();
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    vadCtx = new Ctx();
+    const src = vadCtx.createMediaStreamSource(stream);
+    const analyser = vadCtx.createAnalyser();
+    analyser.fftSize = 512;
+    src.connect(analyser);
+    const buf = new Float32Array(analyser.fftSize);
+    const startedAt = Date.now();
+    let heardSpeech = false;
+    let lastSpeechAt = startedAt;
+    const silenceMs = current && current.kind === "sentence" ? 1500 : 1100;
+
+    vadTimer = setInterval(() => {
+      analyser.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+      const now = Date.now();
+      if (rms > 0.022) {
+        heardSpeech = true;
+        lastSpeechAt = now;
+      } else if (heardSpeech && (now - startedAt) >= 700 && (now - lastSpeechAt) >= silenceMs) {
+        stopSilenceDetector();
+        onSilence();
+      }
+    }, 100);
+  } catch (e) {
+    stopSilenceDetector();
+  }
+}
+
+function createCompressedRecorder(stream) {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+  if (typeof MediaRecorder.isTypeSupported === "function") {
+    for (const mimeType of candidates) {
+      if (MediaRecorder.isTypeSupported(mimeType)) {
+        try { return new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 24000 }); } catch (e) {}
+      }
+    }
+  }
+  return new MediaRecorder(stream);
+}
+
 async function aiCheck(key) {
   if (mediaRec && mediaRec.state === "recording") { mediaRec.stop(); return; }
   if (busy) return;
@@ -536,15 +591,19 @@ async function aiCheck(key) {
     return;
   }
   const chunks = [];
-  mediaRec = new MediaRecorder(mediaStream);
+  mediaRec = createCompressedRecorder(mediaStream);
   mediaRec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
   mediaRec.onstart = () => {
     setRecording(true, true);
-    setMsg("Dinliyorum... 👂 (bitirince ⏹️ düğmesine bas)", "listen", "🤖 Yapay zekâ");
+    setMsg("Dinliyorum... 👂 Okuyunca otomatik biter (istersen ⏹️ bas)", "listen", "🤖 Yapay zekâ");
+    startSilenceDetector(mediaStream, () => {
+      if (mediaRec && mediaRec.state === "recording") mediaRec.stop();
+    });
     recTimer = setTimeout(() => { if (mediaRec && mediaRec.state === "recording") mediaRec.stop(); }, MAX_RECORD_MS);
   };
   mediaRec.onstop = async () => {
     clearTimeout(recTimer);
+    stopSilenceDetector();
     const type = mediaRec ? mediaRec.mimeType : "";
     if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
     mediaRec = null; mediaStream = null;
@@ -560,13 +619,15 @@ async function aiCheck(key) {
 
     setMsg("Düşünüyorum... 🤔", "listen", "🤖 Yapay zekâ");
     try {
+      const t0 = Date.now();
       const audio = await toGeminiAudio(blob);
       if (myId !== activeCheckId) return;
       const out = await askGemini(key, current.text, audio);
       if (myId !== activeCheckId) return;
+      const sec = ((Date.now() - t0) / 1000).toFixed(1);
       busy = false;
       const prefix = getDebugPrefix() ? "Google: " : "";
-      onResult(!!out.dogru, prefix + (out.mesaj || (out.dogru ? randomPraise() : "Bir daha dene! 🙂")), "🤖 Yapay zekâ");
+      onResult(!!out.dogru, prefix + (out.mesaj || (out.dogru ? randomPraise() : "Bir daha dene! 🙂")), `🤖 Yapay zekâ · ${sec} sn`);
     } catch (err) {
       if (myId !== activeCheckId || err.name === "AbortError") { busy = false; return; }
       console.error("Gemini hatası:", err);
@@ -578,7 +639,14 @@ async function aiCheck(key) {
   mediaRec.start();
 }
 
+const GEMINI_AUDIO_MIMES = new Set(["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/aac"]);
+
 async function toGeminiAudio(blob) {
+  const baseMime = (blob.type || "").split(";")[0].trim().toLowerCase();
+  // Doğrudan desteklenen sıkıştırılmış biçimse yavaş WAV dönüşümünü atla
+  if (GEMINI_AUDIO_MIMES.has(baseMime)) {
+    return { mime: baseMime, b64: await blobToBase64(blob) };
+  }
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     const ctx = new Ctx();
@@ -618,16 +686,13 @@ function blobToBase64(blob) {
 
 async function askGemini(key, target, audio) {
   const prompt =
-    `Sen okumayı yeni öğrenen, 6-8 yaş arası bir Türk çocuğa yardım eden sevimli ve sabırlı bir öğretmensin. ` +
-    `Çocuğun okuması gereken metin: "${target}". Ekteki ses kaydını dinle. ` +
-    `Çocuk heceleyerek (ör. "ka-le"), yavaş veya hafif hatalı telaffuzla okuyabilir; bu normaldir. ` +
-    `Metin büyük ölçüde doğru okunduysa "dogru": true de ve kısa bir tebrik yaz. ` +
-    `Yanlışsa veya sessizse "dogru": false de; hangi sesin (harfin) eksik ya da farklı olduğunu nazikçe, ` +
-    `moral bozmadan söyle ve tekrar denemesini teşvik et. "mesaj" en fazla 2 kısa Türkçe cümle olsun. ` +
-    `Sadece şu JSON biçiminde yanıt ver: {"dogru": true veya false, "mesaj": "..."}`;
+    `Sen 6-8 yaş arası Türk çocuğa okuma öğreten sabırlı öğretmensin. Hedef: "${target}". ` +
+    `Çocuk heceleyerek veya yavaş okuyabilir; büyük ölçüde doğruysa "dogru":true ve kısa tebrik yaz. ` +
+    `Yanlış/sessizse "dogru":false, hangi sesin eksik olduğunu nazikçe söyle ve teşvik et. ` +
+    `En fazla 2 kısa Türkçe cümle, sadece JSON: {"dogru":bool,"mesaj":"..."}`;
   const res = await callGemini(key, {
     contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: audio.mime, data: audio.b64 } }] }],
-    generationConfig: { responseMimeType: "application/json", temperature: 0.3 }
+    generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 120 }
   });
   const data = res.data;
   const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
@@ -635,6 +700,19 @@ async function askGemini(key, target, audio) {
   const raw = parts.filter((p) => !p.thought && typeof p.text === "string").map((p) => p.text).join("").trim();
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
   return JSON.parse(cleaned);
+}
+
+// Modele göre düşünme (thinking) süresini kapatır/en aza indirir (orijinal body'yi bozmaz)
+function buildRequestBody(model, body, useThinking = true) {
+  const gen = Object.assign({}, body.generationConfig || {});
+  if (useThinking) {
+    if (/gemini-2\.5/.test(model)) {
+      gen.thinkingConfig = { thinkingBudget: 0, includeThoughts: false };
+    } else if (/gemini-3/.test(model)) {
+      gen.thinkingConfig = { thinkingLevel: "minimal", includeThoughts: false };
+    }
+  }
+  return Object.assign({}, body, Object.keys(gen).length ? { generationConfig: gen } : {});
 }
 
 async function callGemini(key, body, onProgress) {
@@ -653,34 +731,43 @@ async function callGemini(key, body, onProgress) {
 async function tryModels(key, body, models, onProgress, errors) {
   for (const model of models) {
     if (onProgress) onProgress(model);
-    const ctrl = new AbortController();
-    aiAbortCtrl = ctrl;
-    const timer = setTimeout(() => ctrl.abort(), GEMINI_TIMEOUT_MS);
-    try {
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-          body: JSON.stringify(body),
-          signal: ctrl.signal
+    let useThinking = true;
+    while (true) {
+      const ctrl = new AbortController();
+      aiAbortCtrl = ctrl;
+      const timer = setTimeout(() => ctrl.abort(), GEMINI_TIMEOUT_MS);
+      try {
+        const resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+            body: JSON.stringify(buildRequestBody(model, body, useThinking)),
+            signal: ctrl.signal
+          }
+        );
+        if (resp.ok) {
+          lsSet(LS.model, model);
+          return { data: await resp.json(), model };
         }
-      );
-      if (resp.ok) {
-        lsSet(LS.model, model);
-        return { data: await resp.json(), model };
+        let detail = "";
+        try { detail = (await resp.json()).error.message; } catch (e) {}
+        if (resp.status === 400 && useThinking && /thinking/i.test(detail)) {
+          useThinking = false;
+          continue; // thinkingConfig desteklemeyen modelde düşünmesiz bir kez tekrar dene
+        }
+        if (lsGet(LS.model) === model && (resp.status === 400 || resp.status === 404)) lsDel(LS.model);
+        errors.push("HTTP " + resp.status + " [" + model + "] " + detail.slice(0, 140));
+        if (/API key/i.test(detail) || resp.status === 401 || resp.status === 403) return null;
+        break;
+      } catch (e) {
+        if (ctrl.userAborted) throw e;
+        errors.push((e.name === "AbortError" ? "Zaman aşımı" : "Ağ hatası") + " [" + model + "]");
+        break;
+      } finally {
+        clearTimeout(timer);
+        if (aiAbortCtrl === ctrl) aiAbortCtrl = null;
       }
-      let detail = "";
-      try { detail = (await resp.json()).error.message; } catch (e) {}
-      if (lsGet(LS.model) === model && (resp.status === 400 || resp.status === 404)) lsDel(LS.model);
-      errors.push("HTTP " + resp.status + " [" + model + "] " + detail.slice(0, 140));
-      if (/API key/i.test(detail) || resp.status === 401 || resp.status === 403) return null;
-    } catch (e) {
-      if (ctrl.userAborted) throw e;
-      errors.push((e.name === "AbortError" ? "Zaman aşımı" : "Ağ hatası") + " [" + model + "]");
-    } finally {
-      clearTimeout(timer);
-      if (aiAbortCtrl === ctrl) aiAbortCtrl = null;
     }
   }
   return null;
@@ -918,9 +1005,11 @@ $("testKey").onclick = async () => {
   renderStatusBar();
   $("keyState").textContent = "Test ediliyor...";
   try {
+    const t0 = Date.now();
     const res = await callGemini(k, { contents: [{ parts: [{ text: "Sadece 'tamam' yaz." }] }] },
       (m) => { $("keyState").textContent = "Test ediliyor: " + m + " ..."; });
-    renderKeyState(`✅ Anahtar çalışıyor (${res.model}), kaydedildi.`);
+    const sec = ((Date.now() - t0) / 1000).toFixed(1);
+    renderKeyState(`✅ Anahtar çalışıyor (${res.model} · ${sec} sn), kaydedildi.`);
   } catch (e) {
     renderKeyState("❌ " + e.message);
   }
