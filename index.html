@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Okuyorum</title>
+  <meta name="description" content="Okumayı yeni öğrenen çocuklar için sesli okuma uygulaması">
+  <meta name="theme-color" content="#ff7a59">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Üst çubuk: puan, seviye seçimi, harf seçimi -->
+  <header class="topbar">
+    <div id="score" class="pill" aria-live="polite">⭐ 0</div>
+    <nav id="levels" class="levels" aria-label="Seviyeler">
+      <button class="lvl" data-level="1">Heceler</button>
+      <button class="lvl" data-level="2">Kelimeler</button>
+      <button class="lvl" data-level="3">Cümleler</button>
+    </nav>
+    <button id="lettersBtn" class="pill btn-letters">🔤 Harfler</button>
+  </header>
+
+  <!-- Ana kart -->
+  <main class="card">
+    <div id="emoji" class="emoji" aria-hidden="true"></div>
+    <div id="word" class="word" aria-live="polite"></div>
+
+    <div class="actions">
+      <button id="listen" class="btn btn-listen">🔊 Dinle</button>
+      <button id="mic" class="btn btn-mic">🎤 Oku</button>
+      <button id="next" class="btn btn-next">➡️ Sonraki</button>
+    </div>
+
+    <div id="msg" class="msg" role="status" aria-live="polite">Mikrofona bas ve oku!</div>
+
+    <!-- Seviye ilerleme çubuğu (her 10 doğru = 1 tur) -->
+    <div class="progress" aria-hidden="true"><div id="bar"></div></div>
+  </main>
+
+  <!-- Ebeveyn bölümü (açılır panel) -->
+  <details id="parent" class="parent">
+    <summary>⚙️ Ebeveyn</summary>
+
+    <h3>🤖 Yapay zekâ modu (isteğe bağlı)</h3>
+    <p>Gemini API anahtarınızı girerseniz çocuğun sesi yapay zekâ ile daha esnek değerlendirilir
+       (heceleme, yavaş okuma, hafif hatalı telaffuz kabul edilir). Anahtar yalnızca bu cihazın
+       tarayıcısında saklanır. Anahtar yoksa tarayıcının ses tanıması kullanılır.</p>
+    <input id="key" type="password" placeholder="AIza..." autocomplete="off">
+    <div class="row">
+      <button id="saveKey" class="small">Kaydet</button>
+      <button id="clearKey" class="small ghost">Anahtarı sil</button>
+      <span id="keyState"></span>
+    </div>
+
+    <h3>🔤 Harf sırası</h3>
+    <p>Sınıfta öğrenilen harfleri sırayla yazın (boşluk/virgülle ayırabilirsiniz).</p>
+    <textarea id="order" rows="3"></textarea>
+    <div class="row">
+      <button id="saveOrder" class="small">Sırayı kaydet</button>
+      <button id="resetOrder" class="small ghost">Varsayılan (MEB)</button>
+    </div>
+
+    <h3>🧹 İlerleme</h3>
+    <button id="resetAll" class="small danger">Puan ve ilerlemeyi sıfırla</button>
+  </details>
+
+  <!-- Harf seçici ekran -->
+  <div id="picker" class="overlay" hidden>
+    <div class="picker-box">
+      <h2>Hangi harfe kadar geldin?</h2>
+      <p>Öğrendiğin <b>son harfe</b> dokun. Ondan öncekiler de seçilir.</p>
+      <div id="letterGrid" class="letter-grid"></div>
+      <div id="pickerInfo" class="picker-info"></div>
+      <button id="startBtn" class="btn btn-start">▶️ Başla</button>
+    </div>
+  </div>
+
+  <canvas id="confetti"></canvas>
+
+  <script src="words.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

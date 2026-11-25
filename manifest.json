@@ -1,0 +1,16 @@
+{
+  "name": "Okuyorum",
+  "short_name": "Okuyorum",
+  "description": "Okumayı yeni öğrenen çocuklar için sesli okuma uygulaması",
+  "lang": "tr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffe9a8",
+  "theme_color": "#ff7a59",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
