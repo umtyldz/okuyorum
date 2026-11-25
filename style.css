@@ -409,16 +409,29 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   border-radius: 10px;
   word-break: break-word;
 }
-.chk {
+.rate-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  cursor: pointer;
-  color: #334155;
-  font-size: 14px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-.chk input { width: 18px; height: 18px; accent-color: var(--purple); }
+.parent input[type="range"] {
+  flex: 1;
+  min-width: 160px;
+  height: 8px;
+  accent-color: var(--purple);
+  cursor: pointer;
+}
+.rate-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  background: #f1f5f9;
+  padding: 6px 10px;
+  border-radius: 9px;
+  min-width: 112px;
+  text-align: center;
+}
 
 /* ---------- Harf seçici ---------- */
 .overlay {

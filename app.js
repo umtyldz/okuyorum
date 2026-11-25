@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v13";
+const APP_VERSION = "v14";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -31,7 +31,7 @@ const LS = {
   key: "okuyorum.geminiKey",
   model: "okuyorum.geminiModel",
   order: "okuyorum.letterOrder",
-  debugPrefix: "okuyorum.debugPrefix"
+  speechRate: "okuyorum.speechRate"
 };
 const $ = (id) => document.getElementById(id);
 
@@ -514,11 +514,6 @@ function randomPraise() { return PRAISES[Math.floor(Math.random() * PRAISES.leng
 
 /* ---------- 6) KONTROL MODU 2: Gemini (yapay zekâ) ---------- */
 
-function getDebugPrefix() {
-  const v = lsGet(LS.debugPrefix);
-  return v === null ? true : v === "1";
-}
-
 // Konuşma bitince otomatik durdurma (sessizlik algılama / VAD)
 function startSilenceDetector(stream, onSilence) {
   stopSilenceDetector();
@@ -626,8 +621,7 @@ async function aiCheck(key) {
       if (myId !== activeCheckId) return;
       const sec = ((Date.now() - t0) / 1000).toFixed(1);
       busy = false;
-      const prefix = getDebugPrefix() ? "Google: " : "";
-      onResult(!!out.dogru, prefix + (out.mesaj || (out.dogru ? randomPraise() : "Bir daha dene! 🙂")), `🤖 Yapay zekâ · ${sec} sn`);
+      onResult(!!out.dogru, out.mesaj || (out.dogru ? randomPraise() : "Bir daha dene! 🙂"), `🤖 Yapay zekâ · ${sec} sn`);
     } catch (err) {
       if (myId !== activeCheckId || err.name === "AbortError") { busy = false; return; }
       console.error("Gemini hatası:", err);
@@ -799,9 +793,20 @@ async function discoverModels(key, errors) {
 
 /* ---------- 7) SONUÇ, KONFETİ, HARF SEÇİCİ, EBEVEYN, KISAYOLLAR, PWA ---------- */
 
+function getSpeechRate() {
+  const n = parseFloat(lsGet(LS.speechRate));
+  if (!Number.isFinite(n)) return 0.95;
+  return Math.min(1.4, Math.max(0.5, n));
+}
+
+function formatSpeechRate(r) {
+  const tag = r <= 0.7 ? "Yavaş" : r <= 1.05 ? "Normal" : "Hızlı";
+  return `${r.toFixed(2)}x · ${tag}`;
+}
+
 function onResult(ok, msg, source = "") {
   setMsg(msg, ok ? "good" : "try", source);
-  speak(msg.replace(/[^\p{L}\p{N}\s.,!?'"-]/gu, ""), 0.9);
+  speak(msg.replace(/[^\p{L}\p{N}\s.,!?'"-]/gu, ""), getSpeechRate());
   if (!ok) return;
 
   // Ödül görselini şimdi göster (okumadan önce gizliydi)
@@ -881,7 +886,7 @@ function createLetterBtn(l, idx) {
   b.onclick = () => {
     pendingCount = idx + 1;
     renderPicker();
-    speak(l.toLocaleLowerCase("tr-TR"), 0.7);
+    speak(l.toLocaleLowerCase("tr-TR"), Math.max(0.5, getSpeechRate() * 0.85));
   };
   return b;
 }
@@ -933,7 +938,11 @@ $("pickerClose").onclick = closePicker;
 $("picker").onclick = (e) => { if (e.target === $("picker")) closePicker(); };
 
 // --- Ana düğmeler ---
-$("listen").onclick = () => current && speak(spokenText(current), current.kind === "sentence" ? 0.65 : 0.55);
+$("listen").onclick = () => {
+  if (!current) return;
+  const r = getSpeechRate();
+  speak(spokenText(current), Math.max(0.5, current.kind === "sentence" ? r * 0.9 : r * 0.82));
+};
 $("next").onclick = nextItem;
 $("prev").onclick = prevItem;
 $("mic").onclick = () => {
@@ -1015,8 +1024,17 @@ $("testKey").onclick = async () => {
   }
 };
 
-$("debugPrefix").checked = getDebugPrefix();
-$("debugPrefix").onchange = (e) => lsSet(LS.debugPrefix, e.target.checked ? "1" : "0");
+function renderSpeechRate() {
+  const r = getSpeechRate();
+  $("speechRate").value = r;
+  $("speechRateLabel").textContent = formatSpeechRate(r);
+}
+renderSpeechRate();
+$("speechRate").oninput = (e) => {
+  lsSet(LS.speechRate, e.target.value);
+  renderSpeechRate();
+};
+$("testSpeech").onclick = () => speak("Harika okudun! Şimdi yeni kelimeye geçelim.", getSpeechRate());
 
 $("order").value = order.join(" ");
 $("saveOrder").onclick = () => {

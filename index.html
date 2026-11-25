@@ -79,11 +79,16 @@
         <button id="clearKey" class="small ghost" type="button">Anahtarı sil</button>
       </div>
       <div id="keyState" class="key-state" role="status" aria-live="polite"></div>
+    </section>
 
-      <label class="chk">
-        <input id="debugPrefix" type="checkbox">
-        <span>Test: Yapay zekâ cevaplarının başında sesli olarak "Google" söyle</span>
-      </label>
+    <section class="parent-section">
+      <h3>🔊 Seslendirme (Konuşma) hızı</h3>
+      <p>Dinle düğmesinin ve sesli geri bildirimlerin hızını ayarlayın.</p>
+      <div class="rate-row">
+        <input id="speechRate" type="range" min="0.5" max="1.4" step="0.05">
+        <span id="speechRateLabel" class="rate-label"></span>
+        <button id="testSpeech" class="small ghost" type="button">🔊 Hızı dene</button>
+      </div>
     </section>
 
     <section class="parent-section">
