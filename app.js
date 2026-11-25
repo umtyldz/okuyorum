@@ -14,12 +14,13 @@
 /* ---------- 1) AYARLAR VE DURUM ---------- */
 // Denenecek Gemini modelleri (ilk sıradaki öncelikli; hata olursa sıradakine geçilir).
 // Bir model kapatılırsa buraya yenisini ekleyin.
+const GEMINI_TIMEOUT_MS = 12000;   // Bir model en fazla bu kadar beklenir
 const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"];
 const MAX_RECORD_MS = 6000;                // Yapay zekâ modunda en fazla kayıt süresi
 const PASS_RATIO = 0.75;                   // Levenshtein benzerlik eşiği
 const ROUND_SIZE = 10;                     // Her 10 doğru cevap = 1 tur
 // Test için ekranın en üstünde gösterilir. Her güncellemede artırın.
-const APP_VERSION = "v9";
+const APP_VERSION = "v10";
 // GEÇİCİ test: yapay zekâ cevap verdiğinde mesajın başına eklenir (hem yazılır hem söylenir).
 // Kaldırmak için "" yapın.
 const AI_DEBUG_PREFIX = "Google: ";
@@ -470,19 +471,34 @@ async function askGemini(key, target, audio) {
 }
 
 // Gemini REST çağrısı; hata olursa nedenini (HTTP kodu + Google'ın mesajı) içeren Error fırlatır
-async function callGemini(key, body) {
+async function callGemini(key, body, onProgress) {
   let lastErr = null;
   // Önce son çalışan model, sonra listedekiler sırayla denenir
   const tried = [...new Set([localStorage.getItem(LS.model), ...GEMINI_MODELS].filter(Boolean))];
   for (const model of tried) {
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify(body)
-      }
-    );
+    if (onProgress) onProgress(model);
+    // Her istek için zaman aşımı: sonsuza kadar beklemesin
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), GEMINI_TIMEOUT_MS);
+    let resp;
+    try {
+      resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: JSON.stringify(body),
+          signal: ctrl.signal
+        }
+      );
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = new Error(e.name === "AbortError"
+        ? "Zaman aşımı [" + model + "] (" + GEMINI_TIMEOUT_MS / 1000 + " sn cevap yok)"
+        : "Ağ hatası [" + model + "]: " + e.message);
+      continue;                                  // sıradaki modeli dene
+    }
+    clearTimeout(timer);
     if (resp.ok) {
       localStorage.setItem(LS.model, model);   // çalışan modeli hatırla
       return resp.json();
@@ -615,7 +631,8 @@ $("testKey").onclick = async () => {
   localStorage.setItem(LS.key, k);
   $("keyState").textContent = "Test ediliyor...";
   try {
-    await callGemini(k, { contents: [{ parts: [{ text: "Sadece 'tamam' yaz." }] }] });
+    await callGemini(k, { contents: [{ parts: [{ text: "Sadece 'tamam' yaz." }] }] },
+      (m) => { $("keyState").textContent = "Test ediliyor: " + m + " ..."; });
     $("keyState").textContent = "✅ Anahtar çalışıyor, kaydedildi.";
   } catch (e) {
     $("keyState").textContent = "❌ " + e.message;
