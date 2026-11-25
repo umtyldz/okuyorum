@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v17";
+const APP_VERSION = "v18";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -407,14 +407,25 @@ function noSupportMessage() {
 
 function squeeze(s) { return s.replace(/(.)\1+/g, "$1"); }
 
+// Okunan metnin hedefle eşleşip eşleşmediğini kontrol eder (sıkı kısa-kelime korumalı)
+function isReadingMatch(heardRaw, targetText, kind) {
+  const h = clean(heardRaw);
+  const t = clean(targetText);
+  if (!h || !t) return false;
+  if (h === t || squeeze(h) === squeeze(t)) return true;
+  const sim = Math.max(similarity(h, t), similarity(squeeze(h), squeeze(t)));
+  const threshold = (kind === "syl" || t.length <= 4) ? 0.85 : PASS_RATIO;
+  return sim >= threshold;
+}
+
 function basicCheck(prefix = "", attempt = 0, myId = ++activeCheckId) {
   if (!SR) { noSupportMessage(); return; }
   if (myId !== activeCheckId) return;
-  const target = squeeze(clean(current.text));
+  const targetNorm = squeeze(clean(current.text));
   const r = new SR();
   recognition = r;
   r.lang = "tr-TR";
-  r.maxAlternatives = 5;
+  r.maxAlternatives = 3;
   r.interimResults = true;
   let manualStop = false;
   r.manualStopFn = () => { manualStop = true; try { r.stop(); } catch (e) {} };
@@ -431,32 +442,43 @@ function basicCheck(prefix = "", attempt = 0, myId = ++activeCheckId) {
 
   r.onresult = (e) => {
     if (done || myId !== activeCheckId) return;
-    // Birden fazla sonuç segmenti varsa (özellikle cümlelerde) birleştir
     const fullParts = [];
     for (let k = 0; k < e.results.length; k++) fullParts.push(e.results[k][0].transcript);
     const fullRaw = fullParts.join(" ").trim();
     const latest = e.results[e.results.length - 1];
 
-    let accepted = false, bestSim = -1;
+    let matchedRaw = null, bestSim = -1;
     const candidates = [{ raw: fullRaw, norm: squeeze(clean(fullRaw)) }];
-    for (const alt of latest) {
-      const raw = String(alt.transcript || "").trim();
+    const altLimit = Math.min(2, latest.length);
+    for (let i = 0; i < altLimit; i++) {
+      const raw = String(latest[i].transcript || "").trim();
       candidates.push({ raw, norm: squeeze(clean(raw)) });
     }
 
     for (const c of candidates) {
-      const heard = c.norm;
-      if (!heard) continue;
-      const s = similarity(heard, target);
-      if (s >= PASS_RATIO || (current.kind === "syl" && heard.includes(target))) accepted = true;
-      if (s > bestSim) { bestSim = s; lastHeard = heard; lastRawHeard = c.raw; }
+      if (!c.norm) continue;
+      if (isReadingMatch(c.raw, current.text, current.kind) && matchedRaw === null) {
+        matchedRaw = c.raw;
+      }
+      const s = similarity(c.norm, targetNorm);
+      if (s > bestSim) { bestSim = s; lastHeard = c.norm; lastRawHeard = c.raw; }
     }
-    if (accepted) {
+
+    // Ara sonuçlarda yalnızca önizleme göster; kesinleşmeden kabul etme
+    if (!latest.isFinal) {
+      if (lastRawHeard) {
+        $("msgHeard").textContent = `Duyulan: "${lastRawHeard}"`;
+        $("msgHeard").hidden = false;
+      }
+      return;
+    }
+
+    if (matchedRaw !== null) {
       done = true;
       try { r.stop(); } catch (err) {}
       busy = false;
       setRecording(false);
-      onResult(true, randomPraise(), "🎙️ Tarayıcı");
+      onResult(true, randomPraise(), "🎙️ Tarayıcı", matchedRaw);
     }
   };
 
@@ -481,7 +503,8 @@ function basicCheck(prefix = "", attempt = 0, myId = ++activeCheckId) {
     done = true;
     if (lastHeard) {
       setRecording(false); busy = false;
-      onResult(false, randomRetry(), "🎙️ Tarayıcı", lastRawHeard);
+      const ok = isReadingMatch(lastRawHeard, current.text, current.kind);
+      onResult(ok, ok ? randomPraise() : randomRetry(), "🎙️ Tarayıcı", lastRawHeard);
       return;
     }
     if (attempt < 2 && !manualStop) {
@@ -667,12 +690,13 @@ async function aiCheck(key) {
       const t0 = Date.now();
       const audio = await toGeminiAudio(blob);
       if (myId !== activeCheckId) return;
-      const out = await askGemini(key, current.text, audio);
+      const out = await askGemini(key, audio);
       if (myId !== activeCheckId) return;
       const sec = ((Date.now() - t0) / 1000).toFixed(1);
       busy = false;
-      const heard = out.dogru ? "" : String(out.duyulan || "").trim();
-      onResult(!!out.dogru, out.dogru ? randomPraise() : randomRetry(), `🤖 Yapay zekâ · ${sec} sn`, heard);
+      const heard = String(out.duyulan || "").trim();
+      const ok = isReadingMatch(heard, current.text, current.kind);
+      onResult(ok, ok ? randomPraise() : randomRetry(), `🤖 Yapay zekâ · ${sec} sn`, heard || "(ses anlaşılmadı)");
     } catch (err) {
       if (myId !== activeCheckId || err.name === "AbortError") { busy = false; return; }
       console.error("Gemini hatası:", err);
@@ -729,14 +753,15 @@ function blobToBase64(blob) {
   });
 }
 
-async function askGemini(key, target, audio) {
+// Kör transkripsiyon: model hedef kelimeyi bilmez, yalnızca ses kaydında duyduğu Türkçe metni yazar
+async function askGemini(key, audio) {
   const prompt =
-    `Sen 6-8 yaş arası Türk çocuğun okuma öğretmenisin. Hedef metin: "${target}". ` +
-    `Ses kaydını dinle; çocuk heceleyerek, yavaş veya hafif hatalı telaffuzla okuyabilir, büyük ölçüde doğruysa kabul et. ` +
-    `Yorum yazma. Doğruysa sadece {"dogru":true}, yanlışsa sadece duyduğun metinle {"dogru":false,"duyulan":"..."} (ses anlaşılmadıysa "") ver.`;
+    `Bu ses kaydında bir Türk çocuk okuma çalışması yapıyor. ` +
+    `Yalnızca ses kaydında duyduğun Türkçe hece, kelime veya cümleyi aynen yaz; tahmin yürütme veya düzeltme yapma. ` +
+    `Konuşma yoksa ya da anlaşılmıyorsa boş string ver. Sadece JSON: {"duyulan":"..."}`;
   const res = await callGemini(key, {
     contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: audio.mime, data: audio.b64 } }] }],
-    generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 48 }
+    generationConfig: { responseMimeType: "application/json", temperature: 0, maxOutputTokens: 48 }
   });
   const data = res.data;
   const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
@@ -855,7 +880,7 @@ function formatSpeechRate(r) {
 }
 
 function onResult(ok, msg, source = "", heard = "") {
-  setMsg(msg, ok ? "good" : "try", source, ok ? "" : heard);
+  setMsg(msg, ok ? "good" : "try", source, heard);
   speak(msg.replace(/[^\p{L}\p{N}\s.,!?'"-]/gu, ""), getSpeechRate());
   if (!ok) return;
 
