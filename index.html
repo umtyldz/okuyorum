@@ -15,15 +15,19 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Üst çubuk: puan, seviye seçimi, harf seçimi -->
+  <!-- Üst çubuk: puan, seviye seçimi, sınıf ve harf seçimi -->
   <header class="topbar">
     <div id="score" class="pill score-pill" aria-live="polite">⭐ 0</div>
     <nav id="levels" class="levels" aria-label="Seviyeler">
       <button class="lvl" data-level="1">Heceler</button>
       <button class="lvl" data-level="2">Kelimeler</button>
       <button class="lvl" data-level="3">Cümleler</button>
+      <button id="homeworkTab" class="lvl lvl-hw" data-level="4" hidden>📚 Ödev</button>
     </nav>
-    <button id="lettersBtn" class="pill btn-letters" type="button">🔤 Harfler</button>
+    <div class="top-right">
+      <span id="classBadge" class="pill class-pill" hidden></span>
+      <button id="lettersBtn" class="pill btn-letters" type="button">🔤 Harfler</button>
+    </div>
   </header>
 
   <!-- Ana okuma kartı -->
@@ -106,6 +110,106 @@
       <h3>🧹 İlerleme</h3>
       <button id="resetAll" class="small danger" type="button">Puan ve ilerlemeyi sıfırla</button>
     </section>
+
+    <!-- Sınıf bağlantısı (Veli / Öğrenci) -->
+    <section class="parent-section">
+      <h3>🏫 Sınıf bağlantısı (isteğe bağlı)</h3>
+      <p>Öğretmeninizin paylaştığı sınıf kodunu girerseniz sınıfınızın ödevleri ve kelimeleri otomatik yüklenir.</p>
+      <div class="row">
+        <input id="classCodeInput" type="text" placeholder="Örn: 1B-4821" autocomplete="off" style="flex:1;min-width:140px;text-transform:uppercase">
+        <button id="joinClassBtn" class="small" type="button">Sınıfa bağlan</button>
+        <button id="leaveClassBtn" class="small ghost" type="button" hidden>Sınıftan çık</button>
+      </div>
+      <div id="classJoinState" class="key-state" role="status" aria-live="polite"></div>
+    </section>
+
+    <!-- Öğretmen / Yönetici Paneli -->
+    <section class="parent-section">
+      <h3>👩‍🏫 Öğretmen / Yönetici Paneli</h3>
+      <div id="teacherLoginForm">
+        <p>Kendi sınıfınıza sayfa tarayıp anlık ödev/kelime yayınlamak için öğretmen hesabınızla giriş yapın.</p>
+        <div class="stack-inputs">
+          <input id="teacherEmail" type="email" placeholder="ogretmen@okul.com" autocomplete="username">
+          <input id="teacherPass" type="password" placeholder="Şifre" autocomplete="current-password">
+        </div>
+        <div class="row">
+          <button id="teacherLoginBtn" class="small" type="button">Giriş yap</button>
+        </div>
+        <div id="teacherAuthMsg" class="key-state" hidden></div>
+      </div>
+
+      <div id="teacherArea" hidden>
+        <div class="teacher-bar">
+          <span id="teacherInfo" class="teacher-info"></span>
+          <button id="teacherLogoutBtn" class="small ghost" type="button">Çıkış yap</button>
+        </div>
+
+        <!-- Sınıf seçimi / oluşturma -->
+        <div class="sub-box">
+          <label class="field-label" for="teacherClassSelect">Sınıfınız</label>
+          <select id="teacherClassSelect" class="select-box"></select>
+          <div class="row">
+            <input id="newClassName" type="text" placeholder="Yeni sınıf adı (ör: 1-B)" style="flex:1;min-width:150px">
+            <button id="createClassBtn" class="small" type="button">+ Sınıf oluştur</button>
+          </div>
+          <div id="classShareRow" class="share-box" hidden>
+            <div class="share-line">
+              <input id="classShareUrl" type="text" readonly>
+              <button id="copyClassLinkBtn" class="small" type="button">📋 Linki kopyala</button>
+            </div>
+            <div class="row">
+              <button id="previewClassBtn" class="small ghost" type="button">👁️ Bu sınıfa geç</button>
+              <button id="syncLettersBtn" class="small ghost" type="button">🔤 Seçili harfleri sınıfa kaydet</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Kameradan sayfa tarama -->
+        <div class="sub-box">
+          <h4>📷 Kameradan sayfa tara ve yayınla</h4>
+          <p>Fotoğraf yalnızca metni okumak için kullanılır, hiçbir yere kaydedilmez. (Gemini API anahtarı gerekir.)</p>
+          <input id="pageCameraInput" type="file" accept="image/*" capture="environment" hidden>
+          <input id="pageGalleryInput" type="file" accept="image/*" hidden>
+          <div class="row">
+            <button id="scanCameraBtn" class="small" type="button">📷 Kamera ile tara</button>
+            <button id="scanGalleryBtn" class="small ghost" type="button">🖼️ Galeriden seç</button>
+            <button id="addManualRowBtn" class="small ghost" type="button">✏️ Elle ekle</button>
+          </div>
+          <div id="scanState" class="key-state" hidden></div>
+
+          <!-- Taranan liste önizleme ve düzenleme -->
+          <div id="scanReview" hidden>
+            <div id="scanList" class="scan-list"></div>
+            <label class="chk-inline">
+              <input id="replaceHomeworkChk" type="checkbox" checked>
+              <span>Önceki "Günün Ödevi" listesini yenisiyle değiştir</span>
+            </label>
+            <div class="row">
+              <button id="publishScanBtn" class="small good-btn" type="button">🚀 Sınıfımda yayınla</button>
+              <button id="clearScanBtn" class="small ghost" type="button">Listeyi temizle</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mevcut sınıf kelimeleri -->
+        <div id="classWordsBox" class="sub-box" hidden>
+          <h4>📚 Sınıftaki bulut kelimeleri</h4>
+          <div id="classWordsList" class="class-words-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Yönetici onay kuyruğu -->
+    <section id="adminArea" class="parent-section" hidden>
+      <h3>👑 Yönetici: Ortak Havuz Onay Kuyruğu</h3>
+      <p>Öğretmenlerin sınıfına eklediği yeni kelime ve cümleleri inceleyip tek tıkla tüm sınıfların ortak havuzuna alabilirsiniz.</p>
+      <div class="row">
+        <button id="refreshPendingBtn" class="small" type="button">🔄 Yenile</button>
+        <button id="approveAllPendingBtn" class="small good-btn" type="button">✅ Tümünü ortak havuza al</button>
+      </div>
+      <div id="adminState" class="key-state" hidden></div>
+      <div id="pendingList" class="scan-list"></div>
+    </section>
   </details>
 
   <div id="ver" class="ver">Sürüm ?</div>
@@ -140,6 +244,7 @@
   <canvas id="confetti"></canvas>
 
   <script src="words.js"></script>
+  <script src="cloud.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

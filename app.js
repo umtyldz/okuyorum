@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v21";
+const APP_VERSION = "v22";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -31,7 +31,8 @@ const LS = {
   key: "okuyorum.geminiKey",
   model: "okuyorum.geminiModel",
   order: "okuyorum.letterOrder",
-  speechRate: "okuyorum.speechRate"
+  speechRate: "okuyorum.speechRate",
+  classCode: "okuyorum.classCode"
 };
 const $ = (id) => document.getElementById(id);
 
@@ -54,11 +55,12 @@ function loadState() {
   return {
     score: Math.max(0, Number(raw.score) || 0),
     letterCount: Math.max(0, Number(raw.letterCount) || 0),
-    level: [1, 2, 3].includes(Number(raw.level)) ? Number(raw.level) : 1,
+    level: [1, 2, 3, 4].includes(Number(raw.level)) ? Number(raw.level) : 1,
     correct: {
       1: Math.max(0, Number(c[1]) || 0),
       2: Math.max(0, Number(c[2]) || 0),
-      3: Math.max(0, Number(c[3]) || 0)
+      3: Math.max(0, Number(c[3]) || 0),
+      4: Math.max(0, Number(c[4]) || 0)
     }
   };
 }
@@ -99,6 +101,9 @@ let transTimer = null;
 let listenTimer = null;
 let listenCountdown = 0;
 let gateExpected = 0;
+let cloudGlobal = [];      // Ortak bulut havuzu (global_words)
+let cloudClass = null;     // Bağlı sınıf ({id, code, name, letter_count})
+let cloudClassWords = [];  // Bağlı sınıfın kelimeleri/ödevleri (class_words)
 
 /* ---------- 2) YARDIMCILAR ---------- */
 
@@ -189,15 +194,33 @@ function buildSyllables(set) {
 }
 
 function buildPool(level, count = state.letterCount) {
+  if (level === 4) {
+    return cloudClassWords
+      .filter((r) => r.is_homework)
+      .map((r) => ({
+        text: r.text,
+        emoji: r.emoji || (r.kind === "sentence" ? "📖" : "⭐"),
+        kind: r.kind === "sentence" ? "sentence" : "word",
+        solved: false
+      }));
+  }
   const set = selectedLetters(count);
   if (level === 1) return buildSyllables(set);
   const seen = new Set();
-  if (level === 2) {
-    return WORDS.filter(([w]) => usesOnly(w, set) && !seen.has(w) && seen.add(w))
-      .map(([w, e]) => ({ text: w, emoji: e, kind: "word", solved: false }));
-  }
-  return SENTENCES.filter(([s]) => usesOnly(s, set) && !seen.has(s) && seen.add(s))
-    .map(([s, e]) => ({ text: s, emoji: e, kind: "sentence", solved: false }));
+  const isWord = level === 2;
+  const base = isWord ? WORDS : SENTENCES;
+  const kindName = isWord ? "word" : "sentence";
+  const out = [];
+  const pushIfValid = (text, emoji) => {
+    const t = String(text || "").trim().toLocaleUpperCase("tr-TR");
+    if (!t || seen.has(t) || !usesOnly(t, set)) return;
+    seen.add(t);
+    out.push({ text: t, emoji: emoji || (isWord ? "⭐" : "📖"), kind: kindName, solved: false });
+  };
+  for (const [t, e] of base) pushIfValid(t, e);
+  for (const r of cloudGlobal) if (r.kind === kindName) pushIfValid(r.text, r.emoji);
+  for (const r of cloudClassWords) if (r.kind === kindName) pushIfValid(r.text, r.emoji);
+  return out;
 }
 
 // Rastgele seç: başlangıçta tam rastgele, sonrasında son öğrenilen 2 harfe %60 öncelik
@@ -207,12 +230,13 @@ function pickNext() {
   let note = "";
   if (!pool.length) {
     pool = buildPool(1);
-    if (level !== 1) note = "Bu harflerle henüz " + (level === 2 ? "kelime" : "cümle") +
+    if (level === 4) note = "Bu sınıfta henüz ödev yok. Hece çalışalım! 🙂";
+    else if (level !== 1) note = "Bu harflerle henüz " + (level === 2 ? "kelime" : "cümle") +
       " yok. Hece çalışalım! 🙂";
     level = 1;
   }
   const newest = order.slice(Math.max(0, state.letterCount - 2), state.letterCount);
-  const fresh = pool.filter((p) => newest.some((l) => p.text.includes(l)));
+  const fresh = level === 4 ? [] : pool.filter((p) => newest.some((l) => p.text.includes(l)));
   const cands = (fresh.length && shownList.length > 0 && Math.random() < 0.6 ? fresh : pool)
     .filter((p) => !recentIds.includes(p.text));
   const list = cands.length ? cands : pool;
@@ -866,27 +890,27 @@ function buildRequestBody(model, body, useThinking = true) {
   return Object.assign({}, body, Object.keys(gen).length ? { generationConfig: gen } : {});
 }
 
-async function callGemini(key, body, onProgress) {
+async function callGemini(key, body, onProgress, timeoutMs = GEMINI_TIMEOUT_MS, bindAbort = true) {
   const errors = [];
   const known = [...new Set([lsGet(LS.model), ...GEMINI_MODELS].filter(Boolean))];
-  const first = await tryModels(key, body, known, onProgress, errors);
+  const first = await tryModels(key, body, known, onProgress, errors, timeoutMs, bindAbort);
   if (first) return first;
   if (errors.some((e) => /API key|HTTP 403|HTTP 401/i.test(e))) throw new Error(errors.join(" | "));
   if (onProgress) onProgress("model listesi");
   const found = (await discoverModels(key, errors)).filter((m) => !known.includes(m));
-  const second = await tryModels(key, body, found.slice(0, 5), onProgress, errors);
+  const second = await tryModels(key, body, found.slice(0, 5), onProgress, errors, timeoutMs, bindAbort);
   if (second) return second;
   throw new Error(errors.join(" | "));
 }
 
-async function tryModels(key, body, models, onProgress, errors) {
+async function tryModels(key, body, models, onProgress, errors, timeoutMs = GEMINI_TIMEOUT_MS, bindAbort = true) {
   for (const model of models) {
     if (onProgress) onProgress(model);
     let useThinking = true;
     while (true) {
       const ctrl = new AbortController();
-      aiAbortCtrl = ctrl;
-      const timer = setTimeout(() => ctrl.abort(), GEMINI_TIMEOUT_MS);
+      if (bindAbort) aiAbortCtrl = ctrl;
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
         const resp = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -912,12 +936,12 @@ async function tryModels(key, body, models, onProgress, errors) {
         if (/API key/i.test(detail) || resp.status === 401 || resp.status === 403) return null;
         break;
       } catch (e) {
-        if (ctrl.userAborted) throw e;
+        if (bindAbort && ctrl.userAborted) throw e;
         errors.push((e.name === "AbortError" ? "Zaman aşımı" : "Ağ hatası") + " [" + model + "]");
         break;
       } finally {
         clearTimeout(timer);
-        if (aiAbortCtrl === ctrl) aiAbortCtrl = null;
+        if (bindAbort && aiAbortCtrl === ctrl) aiAbortCtrl = null;
       }
     }
   }
@@ -1271,11 +1295,643 @@ $("resetOrder").onclick = () => {
 };
 $("resetAll").onclick = () => {
   if (!confirm("Puan ve ilerleme silinsin mi?")) return;
-  state = { score: 0, letterCount: 0, level: 1, correct: { 1: 0, 2: 0, 3: 0 } };
+  state = { score: 0, letterCount: 0, level: 1, correct: { 1: 0, 2: 0, 3: 0, 4: 0 } };
   saveState();
   renderHeader();
   openPicker();
 };
+
+/* ---------- 8) BULUT (SUPABASE), SAYFA TARAMA, ÖĞRETMEN & YÖNETİCİ ---------- */
+
+let teacherProfile = null;
+let teacherClasses = [];
+let scanItems = [];
+let pendingItems = [];
+let lastCloudSyncAt = 0;
+
+function renderCloudBadges() {
+  const hwCount = cloudClassWords.filter((w) => w.is_homework).length;
+  $("homeworkTab").hidden = hwCount === 0;
+  if (state.level === 4 && hwCount === 0) {
+    state.level = 2;
+    saveState();
+  }
+  const badge = $("classBadge");
+  if (cloudClass) {
+    badge.textContent = `🏫 ${cloudClass.name}`;
+    badge.hidden = false;
+    $("leaveClassBtn").hidden = false;
+    $("classCodeInput").value = cloudClass.code;
+    $("classJoinState").textContent = `✅ Bağlı sınıf: ${cloudClass.name} (${cloudClass.code})` +
+      (hwCount ? ` · ${hwCount} ödev` : "");
+  } else {
+    badge.hidden = true;
+    $("leaveClassBtn").hidden = true;
+    $("classJoinState").textContent = "Henüz bir sınıfa bağlı değilsiniz (ortak havuz açık).";
+  }
+  renderHeader();
+}
+
+async function connectClassByCode(code, opts = {}) {
+  const cleanCode = String(code || "").trim().toUpperCase();
+  if (!cleanCode) return false;
+  if (!opts.quiet) $("classJoinState").textContent = "Sınıf aranıyor...";
+  try {
+    const cls = await cloudFindClassByCode(cleanCode);
+    if (!cls) {
+      if (!opts.quiet) $("classJoinState").textContent = "❌ Bu kodla sınıf bulunamadı.";
+      return false;
+    }
+    cloudClass = cls;
+    lsSet(LS.classCode, cls.code);
+    cloudClassWords = await cloudLoadClassWords(cls.id);
+    if (opts.applyLetters && state.letterCount === 0 && cls.letter_count > 0) {
+      state.letterCount = Math.min(cls.letter_count, order.length);
+      saveState();
+      $("picker").hidden = true;
+    }
+    renderCloudBadges();
+    if (opts.applyLetters && state.letterCount > 0 && !shownList.length) newSession();
+    return true;
+  } catch (e) {
+    if (!opts.quiet) $("classJoinState").textContent = "❌ Bağlantı hatası: " + e.message;
+    return false;
+  }
+}
+
+$("joinClassBtn").onclick = async () => {
+  const ok = await connectClassByCode($("classCodeInput").value, { applyLetters: true });
+  if (ok) {
+    if (cloudClassWords.some((w) => w.is_homework)) state.level = 4;
+    saveState();
+    renderHeader();
+    newSession();
+  }
+};
+
+$("leaveClassBtn").onclick = () => {
+  lsDel(LS.classCode);
+  cloudClearClassCache();
+  cloudClass = null;
+  cloudClassWords = [];
+  if (state.level === 4) state.level = 2;
+  saveState();
+  $("classCodeInput").value = "";
+  renderCloudBadges();
+  newSession();
+};
+
+// --- Görüntüyü bellekte sıkıştır (hiçbir yere kaydedilmez) ---
+function compressImageToJpeg(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxSide = 1280;
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+        if (w > maxSide || h > maxSide) {
+          const scale = maxSide / Math.max(w, h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+        }
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        const dataUrl = c.toDataURL("image/jpeg", 0.82);
+        URL.revokeObjectURL(url);
+        resolve(dataUrl.split(",")[1]);
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        reject(err);
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Görsel okunamadı")); };
+    img.src = url;
+  });
+}
+
+async function scanPageWithGemini(key, b64) {
+  const prompt =
+    `Bu fotoğrafta 1. sınıf Türkçe okuma kitabı veya çalışma sayfası var. ` +
+    `Sayfadaki okuma alıştırması olan Türkçe kelimeleri ve kısa cümleleri çıkar. ` +
+    `Kurallar: 1) Sayfa numaralarını, "Okuyunuz/Yazınız" gibi yönergeleri ve başlıkları alma. ` +
+    `2) "ka-lem" veya "ar-mut" gibi hece tireli kelimeleri birleştir ("KALEM", "ARMUT"). ` +
+    `3) Her şeyi Türkçe BÜYÜK harfle yaz (İ ve I ayrımına dikkat et). ` +
+    `4) Her kelime ve cümle için uygun tek bir emoji seç. ` +
+    `Sadece şu JSON formatında yanıt ver: {"kelimeler":[["KELİME","🍎"]],"cumleler":[["CÜMLE.","📖"]]}`;
+
+  const res = await callGemini(
+    key,
+    {
+      contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: b64 } }] }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0.1, maxOutputTokens: 2048 }
+    },
+    (m) => { setScanState("Sayfa okunuyor (" + m + ")..."); },
+    25000,
+    false
+  );
+  const data = res.data;
+  const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
+  if (!parts || !parts.length) throw new Error("Boş Gemini yanıtı");
+  const raw = parts.filter((p) => !p.thought && typeof p.text === "string").map((p) => p.text).join("").trim();
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  return JSON.parse(cleaned);
+}
+
+function setScanState(msg, show = true) {
+  const el = $("scanState");
+  el.textContent = msg;
+  el.hidden = !show;
+}
+
+function knownGlobalSet() {
+  const set = new Set();
+  for (const [w] of WORDS) set.add("word:" + w.toLocaleUpperCase("tr-TR"));
+  for (const [s] of SENTENCES) set.add("sentence:" + s.toLocaleUpperCase("tr-TR"));
+  for (const g of cloudGlobal) set.add(`${g.kind}:${String(g.text || "").toLocaleUpperCase("tr-TR")}`);
+  return set;
+}
+
+function renderScanReview() {
+  const listEl = $("scanList");
+  listEl.innerHTML = "";
+  $("scanReview").hidden = scanItems.length === 0;
+  if (!scanItems.length) return;
+
+  scanItems.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "scan-row";
+
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.checked = item.selected !== false;
+    chk.onchange = () => { item.selected = chk.checked; };
+
+    const sel = document.createElement("select");
+    sel.className = "scan-kind";
+    sel.innerHTML = '<option value="word">Kelime</option><option value="sentence">Cümle</option>';
+    sel.value = item.kind;
+    sel.onchange = () => { item.kind = sel.value; };
+
+    const txt = document.createElement("input");
+    txt.type = "text";
+    txt.className = "scan-text";
+    txt.value = item.text;
+    txt.oninput = () => { item.text = txt.value.toLocaleUpperCase("tr-TR"); };
+
+    const em = document.createElement("input");
+    em.type = "text";
+    em.className = "scan-emoji";
+    em.value = item.emoji;
+    em.oninput = () => { item.emoji = em.value; };
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "mini-btn bad";
+    del.textContent = "Sil";
+    del.onclick = () => { scanItems.splice(idx, 1); renderScanReview(); };
+
+    row.append(chk, sel, txt, em, del);
+    listEl.appendChild(row);
+  });
+}
+
+async function handlePageFile(file) {
+  if (!file) return;
+  const key = lsGet(LS.key);
+  if (!key) {
+    setScanState("❌ Sayfa taramak için üstteki bölüme Gemini API anahtarı girip kaydedin.");
+    return;
+  }
+  setScanState("Fotoğraf hazırlanıyor ve okunuyor...");
+  try {
+    const b64 = await compressImageToJpeg(file);
+    const parsed = await scanPageWithGemini(key, b64);
+    const seen = new Set();
+    const added = [];
+    const pushParsed = (arr, kind) => {
+      if (!Array.isArray(arr)) return;
+      for (const pair of arr) {
+        const text = String(Array.isArray(pair) ? pair[0] : pair || "").trim().toLocaleUpperCase("tr-TR");
+        const emoji = String(Array.isArray(pair) && pair[1] ? pair[1] : (kind === "sentence" ? "📖" : "⭐")).trim();
+        const k = `${kind}:${text}`;
+        if (!text || seen.has(k)) continue;
+        seen.add(k);
+        added.push({ kind, text, emoji, selected: true });
+      }
+    };
+    pushParsed(parsed.kelimeler, "word");
+    pushParsed(parsed.cumleler, "sentence");
+    if (!added.length) {
+      setScanState("⚠️ Sayfada okunacak kelime/cümle bulunamadı. Daha net bir açıdan tekrar deneyin.");
+      return;
+    }
+    scanItems = scanItems.concat(added);
+    renderScanReview();
+    setScanState(`✅ ${added.length} öğe çıkarıldı. Kontrol edip "Sınıfımda yayınla"ya basın.`);
+  } catch (e) {
+    setScanState("❌ Sayfa okunamadı: " + e.message);
+  } finally {
+    $("pageCameraInput").value = "";
+    $("pageGalleryInput").value = "";
+  }
+}
+
+$("scanCameraBtn").onclick = () => $("pageCameraInput").click();
+$("scanGalleryBtn").onclick = () => $("pageGalleryInput").click();
+$("pageCameraInput").onchange = (e) => handlePageFile(e.target.files[0]);
+$("pageGalleryInput").onchange = (e) => handlePageFile(e.target.files[0]);
+$("addManualRowBtn").onclick = () => {
+  scanItems.push({ kind: "word", text: "", emoji: "⭐", selected: true });
+  renderScanReview();
+};
+$("clearScanBtn").onclick = () => {
+  scanItems = [];
+  renderScanReview();
+  setScanState("", false);
+};
+
+// --- Öğretmen paneli ve sınıf yönetimi ---
+function getSelectedTeacherClass() {
+  const id = $("teacherClassSelect").value;
+  return teacherClasses.find((c) => c.id === id) || null;
+}
+
+function classShareLink(code) {
+  return location.origin + location.pathname + "?sinif=" + encodeURIComponent(code);
+}
+
+function renderTeacherClasses() {
+  const sel = $("teacherClassSelect");
+  const prevId = sel.value;
+  sel.innerHTML = "";
+  if (!teacherClasses.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Henüz sınıf yok — aşağıdan oluşturun";
+    sel.appendChild(opt);
+    $("classShareRow").hidden = true;
+    $("classWordsBox").hidden = true;
+    return;
+  }
+  for (const c of teacherClasses) {
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = `${c.name} (${c.code})`;
+    sel.appendChild(opt);
+  }
+  if (prevId && teacherClasses.some((c) => c.id === prevId)) sel.value = prevId;
+  else if (cloudClass && teacherClasses.some((c) => c.id === cloudClass.id)) sel.value = cloudClass.id;
+  updateSelectedClassBox();
+}
+
+async function updateSelectedClassBox() {
+  const cls = getSelectedTeacherClass();
+  if (!cls) {
+    $("classShareRow").hidden = true;
+    $("classWordsBox").hidden = true;
+    return;
+  }
+  $("classShareRow").hidden = false;
+  $("classShareUrl").value = classShareLink(cls.code);
+  await loadTeacherClassWords(cls.id);
+}
+
+async function loadTeacherClassWords(classId) {
+  const box = $("classWordsBox");
+  const listEl = $("classWordsList");
+  box.hidden = false;
+  listEl.textContent = "Yükleniyor...";
+  try {
+    const rows = await cloudLoadClassWords(classId);
+    if (cloudClass && cloudClass.id === classId) {
+      cloudClassWords = rows;
+      renderCloudBadges();
+    }
+    listEl.innerHTML = "";
+    if (!rows.length) {
+      listEl.textContent = "Bu sınıfta henüz eklenmiş kelime/ödev yok.";
+      return;
+    }
+    for (const r of rows) {
+      const item = document.createElement("div");
+      item.className = "class-word-item";
+      const left = document.createElement("span");
+      const statusLabel = r.status === "approved" ? "Ortakta" : r.status === "rejected" ? "Özel" : "Onay bekliyor";
+      const statusCls = r.status === "approved" ? "ok" : r.status === "pending" ? "wait" : "";
+      left.append(document.createTextNode(`${r.emoji} `));
+      const bold = document.createElement("b");
+      bold.textContent = r.text;
+      left.append(bold, document.createTextNode(" "));
+      if (r.is_homework) {
+        const hwTag = document.createElement("span");
+        hwTag.className = "badge-tag hw";
+        hwTag.textContent = "Ödev";
+        left.append(hwTag, document.createTextNode(" "));
+      }
+      const stTag = document.createElement("span");
+      stTag.className = `badge-tag ${statusCls}`;
+      stTag.textContent = statusLabel;
+      left.append(stTag);
+
+      const right = document.createElement("div");
+      right.className = "row";
+      right.style.marginTop = "0";
+
+      const hwBtn = document.createElement("button");
+      hwBtn.type = "button";
+      hwBtn.className = "mini-btn" + (r.is_homework ? " ok" : "");
+      hwBtn.textContent = r.is_homework ? "Ödevden çıkar" : "Ödev yap";
+      hwBtn.onclick = async () => {
+        await cloudToggleHomework(r.id, !r.is_homework);
+        await loadTeacherClassWords(classId);
+      };
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "mini-btn bad";
+      delBtn.textContent = "Sil";
+      delBtn.onclick = async () => {
+        await cloudDeleteClassWord(r.id);
+        await loadTeacherClassWords(classId);
+      };
+
+      right.append(hwBtn, delBtn);
+      item.append(left, right);
+      listEl.appendChild(item);
+    }
+  } catch (e) {
+    listEl.textContent = "❌ Liste alınamadı: " + e.message;
+  }
+}
+
+$("teacherClassSelect").onchange = updateSelectedClassBox;
+
+$("createClassBtn").onclick = async () => {
+  const name = $("newClassName").value.trim();
+  if (!name) return;
+  const slug = name.toLocaleUpperCase("tr-TR").replace(/[^A-Z0-9]/g, "").slice(0, 4) || "SINIF";
+  const code = `${slug}-${1000 + Math.floor(Math.random() * 9000)}`;
+  try {
+    const created = await cloudCreateClass(name, code, state.letterCount || 6);
+    $("newClassName").value = "";
+    teacherClasses.unshift(created);
+    renderTeacherClasses();
+    $("teacherClassSelect").value = created.id;
+    await updateSelectedClassBox();
+    await connectClassByCode(created.code, { quiet: true });
+  } catch (e) {
+    alert("Sınıf oluşturulamadı: " + e.message);
+  }
+};
+
+$("copyClassLinkBtn").onclick = async () => {
+  const url = $("classShareUrl").value;
+  try {
+    await navigator.clipboard.writeText(url);
+    $("copyClassLinkBtn").textContent = "✅ Kopyalandı";
+    setTimeout(() => { $("copyClassLinkBtn").textContent = "📋 Linki kopyala"; }, 1800);
+  } catch (e) {
+    $("classShareUrl").select();
+    document.execCommand("copy");
+  }
+};
+
+$("previewClassBtn").onclick = async () => {
+  const cls = getSelectedTeacherClass();
+  if (!cls) return;
+  await connectClassByCode(cls.code, { applyLetters: true });
+  if (cloudClassWords.some((w) => w.is_homework)) state.level = 4;
+  saveState();
+  renderHeader();
+  newSession();
+};
+
+$("syncLettersBtn").onclick = async () => {
+  const cls = getSelectedTeacherClass();
+  if (!cls) return;
+  try {
+    await cloudUpdateClassLetterCount(cls.id, state.letterCount || 6);
+    cls.letter_count = state.letterCount || 6;
+    if (cloudClass && cloudClass.id === cls.id) cloudClass.letter_count = cls.letter_count;
+    alert(`✅ "${cls.name}" sınıfının harf ilerlemesi (${cls.letter_count} harf) kaydedildi.`);
+  } catch (e) {
+    alert("Kaydedilemedi: " + e.message);
+  }
+};
+
+$("publishScanBtn").onclick = async () => {
+  const cls = getSelectedTeacherClass();
+  if (!cls) {
+    setScanState("❌ Önce bir sınıf seçin veya yukarıdan yeni sınıf oluşturun.");
+    return;
+  }
+  const known = knownGlobalSet();
+  const chosen = scanItems
+    .filter((it) => it.selected !== false && it.text.trim())
+    .map((it) => {
+      const text = it.text.trim().toLocaleUpperCase("tr-TR");
+      const kind = it.kind === "sentence" ? "sentence" : "word";
+      return {
+        kind,
+        text,
+        emoji: it.emoji,
+        status: known.has(`${kind}:${text}`) ? "approved" : "pending"
+      };
+    });
+  if (!chosen.length) {
+    setScanState("❌ Yayınlanacak en az bir işaretli satır olmalı.");
+    return;
+  }
+  setScanState("Yayınlanıyor...");
+  try {
+    await cloudPublishClassWords(cls.id, chosen, $("replaceHomeworkChk").checked);
+    scanItems = [];
+    renderScanReview();
+    await loadTeacherClassWords(cls.id);
+    if (!cloudClass || cloudClass.id !== cls.id) {
+      await connectClassByCode(cls.code, { quiet: true });
+    }
+    if (teacherProfile && teacherProfile.role === "admin") await loadAdminQueue();
+    setScanState(`🚀 ${chosen.length} öğe "${cls.name}" sınıfında anında yayınlandı!`);
+  } catch (e) {
+    setScanState("❌ Yayınlanamadı: " + e.message);
+  }
+};
+
+// --- Yönetici (Admin) Onay Kuyruğu ---
+function setAdminState(msg, show = true) {
+  const el = $("adminState");
+  el.textContent = msg;
+  el.hidden = !show;
+}
+
+async function loadAdminQueue() {
+  if (!teacherProfile || teacherProfile.role !== "admin") return;
+  const listEl = $("pendingList");
+  listEl.innerHTML = "";
+  setAdminState("Bekleyen öneriler yükleniyor...");
+  try {
+    pendingItems = await cloudLoadPendingSuggestions();
+    if (!pendingItems.length) {
+      setAdminState("✅ Onay bekleyen yeni kelime yok.");
+      return;
+    }
+    setAdminState(`${pendingItems.length} yeni kelime/cümle ortak havuz için onay bekliyor.`);
+    for (const p of pendingItems) {
+      const row = document.createElement("div");
+      row.className = "pending-item";
+
+      const txt = document.createElement("input");
+      txt.type = "text";
+      txt.className = "scan-text";
+      txt.value = p.text;
+
+      const em = document.createElement("input");
+      em.type = "text";
+      em.className = "scan-emoji";
+      em.value = p.emoji || "⭐";
+
+      const meta = document.createElement("span");
+      meta.className = "badge-tag";
+      meta.textContent = p.classes ? p.classes.name : "Sınıf";
+
+      const okBtn = document.createElement("button");
+      okBtn.type = "button";
+      okBtn.className = "mini-btn ok";
+      okBtn.textContent = "✅ Ortak Havuza Al";
+      okBtn.onclick = async () => {
+        okBtn.disabled = true;
+        try {
+          await cloudApproveToGlobal({
+            id: p.id,
+            kind: p.kind,
+            text: txt.value.trim().toLocaleUpperCase("tr-TR"),
+            emoji: em.value.trim()
+          });
+          cloudGlobal = await cloudLoadGlobalWords();
+          await loadAdminQueue();
+        } catch (e) {
+          okBtn.disabled = false;
+          setAdminState("❌ Hata: " + e.message);
+        }
+      };
+
+      const noBtn = document.createElement("button");
+      noBtn.type = "button";
+      noBtn.className = "mini-btn bad";
+      noBtn.textContent = "Reddet";
+      noBtn.onclick = async () => {
+        await cloudRejectSuggestion(p.id);
+        await loadAdminQueue();
+      };
+
+      row.append(txt, em, meta, okBtn, noBtn);
+      listEl.appendChild(row);
+    }
+  } catch (e) {
+    setAdminState("❌ Kuyruk yüklenemedi: " + e.message);
+  }
+}
+
+$("refreshPendingBtn").onclick = loadAdminQueue;
+$("approveAllPendingBtn").onclick = async () => {
+  if (!pendingItems.length) return;
+  setAdminState("Tüm öneriler ortak havuza ekleniyor...");
+  try {
+    for (const p of pendingItems) await cloudApproveToGlobal(p);
+    cloudGlobal = await cloudLoadGlobalWords();
+    await loadAdminQueue();
+    setAdminState("✅ Tüm bekleyen öğeler ortak havuza eklendi!");
+  } catch (e) {
+    setAdminState("❌ Hata: " + e.message);
+  }
+};
+
+// --- Öğretmen giriş / çıkış ---
+async function refreshTeacherSession() {
+  const session = sbGetSession();
+  if (!session) {
+    teacherProfile = null;
+    teacherClasses = [];
+    $("teacherLoginForm").hidden = false;
+    $("teacherArea").hidden = true;
+    $("adminArea").hidden = true;
+    return;
+  }
+  try {
+    teacherProfile = await sbGetProfile();
+    const isAdmin = teacherProfile && teacherProfile.role === "admin";
+    $("teacherLoginForm").hidden = true;
+    $("teacherArea").hidden = false;
+    $("teacherInfo").textContent = `${isAdmin ? "👑 Yönetici" : "👩‍🏫 Öğretmen"} · ${session.user.email}`;
+    teacherClasses = await cloudListMyClasses(isAdmin);
+    renderTeacherClasses();
+    $("adminArea").hidden = !isAdmin;
+    if (isAdmin) await loadAdminQueue();
+  } catch (e) {
+    sbSignOut();
+    $("teacherLoginForm").hidden = false;
+    $("teacherArea").hidden = true;
+    $("adminArea").hidden = true;
+  }
+}
+
+$("teacherLoginBtn").onclick = async () => {
+  const email = $("teacherEmail").value.trim();
+  const pass = $("teacherPass").value;
+  const msgEl = $("teacherAuthMsg");
+  if (!email || !pass) {
+    msgEl.textContent = "E-posta ve şifre girin.";
+    msgEl.hidden = false;
+    return;
+  }
+  msgEl.textContent = "Giriş yapılıyor...";
+  msgEl.hidden = false;
+  try {
+    await sbSignIn(email, pass);
+    $("teacherPass").value = "";
+    msgEl.hidden = true;
+    await refreshTeacherSession();
+  } catch (e) {
+    msgEl.textContent = "❌ " + e.message;
+  }
+};
+
+$("teacherLogoutBtn").onclick = () => {
+  sbSignOut();
+  refreshTeacherSession();
+};
+
+// --- Bulut başlangıcı ve arka plan senkronizasyonu ---
+async function initCloud() {
+  const params = new URLSearchParams(location.search);
+  const urlCode = params.get("sinif");
+  if (urlCode) lsSet(LS.classCode, urlCode.trim().toUpperCase());
+
+  cloudGlobal = await cloudLoadGlobalWords();
+  const savedCode = lsGet(LS.classCode);
+  if (savedCode) {
+    await connectClassByCode(savedCode, { quiet: true, applyLetters: !!urlCode });
+  } else {
+    renderCloudBadges();
+  }
+  lastCloudSyncAt = Date.now();
+  await refreshTeacherSession();
+}
+
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible") return;
+  if (Date.now() - lastCloudSyncAt < 30000) return;
+  lastCloudSyncAt = Date.now();
+  cloudGlobal = await cloudLoadGlobalWords();
+  if (cloudClass) {
+    cloudClassWords = await cloudLoadClassWords(cloudClass.id);
+    renderCloudBadges();
+  }
+});
 
 // --- PWA: service worker ---
 if ("serviceWorker" in navigator) {
@@ -1286,5 +1942,7 @@ if ("serviceWorker" in navigator) {
 renderStatusBar();
 renderHeader();
 renderKeyState();
+renderCloudBadges();
 if (state.letterCount > 0 && state.letterCount <= order.length) newSession();
 else openPicker();
+initCloud();
