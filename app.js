@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v25";
+const APP_VERSION = "v26";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -1366,6 +1366,12 @@ function applyClassLetters(cls) {
 }
 
 function renderCloudBadges() {
+  const schoolTitleEl = $("schoolTitle");
+  if (schoolTitleEl) {
+    schoolTitleEl.textContent = cloudClass && cloudClass.name
+      ? `ALİ KUŞÇU - ${cloudClass.name}`
+      : "ALİ KUŞÇU";
+  }
   const hwCount = cloudClassWords.filter((w) => w.is_homework).length;
   $("homeworkTab").hidden = hwCount === 0;
   if (state.level === 4 && hwCount === 0) {

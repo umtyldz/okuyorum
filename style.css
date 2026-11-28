@@ -80,6 +80,25 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   backdrop-filter: blur(6px);
 }
 
+/* ---------- Okul ve sınıf başlığı ---------- */
+.school-banner {
+  width: min(100%, 920px);
+  text-align: center;
+  margin: 0 0 8px;
+  line-height: 1.15;
+}
+.school-title {
+  display: inline-block;
+  font-size: clamp(22px, 4.8vw, 34px);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  background: linear-gradient(90deg, #ff4d6d 0%, #ff8c42 24%, #eab308 46%, #10b981 66%, #3b82f6 84%, #9333ea 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 0 rgba(255, 255, 255, 0.92)) drop-shadow(0 4px 10px rgba(43, 30, 74, 0.14));
+}
+
 /* ---------- Üst çubuk ---------- */
 .topbar {
   width: min(100%, 920px);
@@ -780,6 +799,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ---------- Responsive (telefon ve küçük tabletler) ---------- */
 @media (max-width: 600px) {
+  .school-banner { margin-bottom: 6px; }
   .topbar { justify-content: center; }
   .levels { order: 3; width: 100%; justify-content: center; }
   .lvl { flex: 1; font-size: 16px; padding: 10px 8px; }
