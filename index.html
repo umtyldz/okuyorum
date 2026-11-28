@@ -183,12 +183,9 @@
         <!-- Geldiğimiz harfler (Öğretmen) -->
         <div id="teacherLettersBox" class="sub-box" hidden>
           <h4>🔤 Geldiğimiz Harfler</h4>
-          <p>Öğrendiğiniz son harfe dokunup kaydedin. Öğrencilerin oyunu her açılışta bu harflerle başlar.</p>
+          <p>Öğrendiğiniz son harfe dokunun, otomatik kaydedilir. Öğrencilerin oyunu her açılışta bu harflerle başlar.</p>
           <div id="teacherLetterGrid" class="letter-grid"></div>
           <div id="teacherLetterInfo" class="picker-info"></div>
-          <div class="row">
-            <button id="saveClassLettersBtn" class="small good-btn" type="button">💾 Geldiğimiz harfleri kaydet</button>
-          </div>
           <div id="teacherLetterState" class="key-state" hidden></div>
         </div>
 
@@ -221,7 +218,7 @@
 
         <!-- Mevcut sınıf kelimeleri -->
         <div id="classWordsBox" class="sub-box" hidden>
-          <h4>📚 Sınıftaki bulut kelimeleri</h4>
+          <h4>📚 SINIFA AİT KELİMELER</h4>
           <div id="classWordsList" class="class-words-list"></div>
         </div>
 
@@ -277,10 +274,10 @@
     <div class="picker-box" role="dialog" aria-modal="true" aria-labelledby="pickerTitle">
       <button id="pickerClose" class="picker-close" type="button" aria-label="Kapat">✕</button>
       <h2 id="pickerTitle">Hangi harfe kadar geldin?</h2>
-      <p>Öğrendiğin <b>son harfe</b> dokun. Ondan öncekiler de seçilir.</p>
+      <p>Öğrendiğin <b>son harfe</b> dokun; otomatik kaydedilir.</p>
       <div id="letterGrid" class="letter-grid"></div>
       <div id="pickerInfo" class="picker-info"></div>
-      <button id="startBtn" class="btn btn-start" type="button">▶️ Başla</button>
+      <button id="startBtn" class="btn btn-start" type="button">✅ Tamam</button>
     </div>
   </div>
 

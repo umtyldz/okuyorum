@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v26";
+const APP_VERSION = "v27";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -1110,6 +1110,10 @@ function renderPicker() {
     : -1;
   renderLetterGridInto($("letterGrid"), pendingCount, markIdx, (count, l) => {
     pendingCount = count;
+    state.letterCount = count;
+    saveState();
+    renderHeader();
+    newSession();
     renderPicker();
     speak(l.toLocaleLowerCase("tr-TR"), Math.max(0.5, getSpeechRate() * 0.85));
   });
@@ -1117,7 +1121,7 @@ function renderPicker() {
   if (pendingCount) {
     const wCount = buildPool(2, pendingCount).length;
     const sCount = buildPool(3, pendingCount).length;
-    $("pickerInfo").textContent = `${pendingCount} harf seçili · ${wCount} kelime · ${sCount} cümle` +
+    $("pickerInfo").textContent = `✅ Kaydedildi · ${pendingCount} harf · ${wCount} kelime · ${sCount} cümle` +
       (markIdx >= 0 ? ` (👩‍🏫: ${order[markIdx]})` : "");
   } else {
     $("pickerInfo").textContent = "Öğrendiğin son harfe dokun 👆";
@@ -1126,12 +1130,13 @@ function renderPicker() {
 }
 
 $("startBtn").onclick = () => {
-  if (!pendingCount) return;
-  state.letterCount = pendingCount;
-  saveState();
-  renderHeader();
-  $("picker").hidden = true;
-  newSession();
+  if (pendingCount && state.letterCount !== pendingCount) {
+    state.letterCount = pendingCount;
+    saveState();
+    renderHeader();
+    newSession();
+  }
+  closePicker();
 };
 $("openLettersBtn").onclick = openPicker;
 $("pickerClose").onclick = closePicker;
@@ -1642,6 +1647,32 @@ function classShareLink(code) {
   return location.origin + location.pathname + "?sinif=" + encodeURIComponent(code);
 }
 
+let teacherLetterSaveSeq = 0;
+
+async function saveTeacherLetters(count) {
+  const cls = getSelectedTeacherClass();
+  if (!cls) return;
+  const seq = ++teacherLetterSaveSeq;
+  const st = $("teacherLetterState");
+  st.textContent = "Kaydediliyor...";
+  st.hidden = false;
+  try {
+    await cloudUpdateClassSettings(cls.id, { letter_count: count });
+    if (seq !== teacherLetterSaveSeq) return;
+    cls.letter_count = count;
+    if (cloudClass && cloudClass.id === cls.id) {
+      cloudClass.letter_count = count;
+      applyClassLetters(cloudClass);
+      renderHeader();
+      newSession();
+    }
+    st.textContent = `✅ "${cls.name}" sınıfı ${count}. harfe (${order[count - 1]}) otomatik kaydedildi.`;
+  } catch (e) {
+    if (seq !== teacherLetterSaveSeq) return;
+    st.textContent = "❌ Kaydedilemedi: " + e.message;
+  }
+}
+
 function renderTeacherLetters() {
   const cls = getSelectedTeacherClass();
   const box = $("teacherLettersBox");
@@ -1651,6 +1682,7 @@ function renderTeacherLetters() {
     teacherPendingCount = count;
     renderTeacherLetters();
     speak(l.toLocaleLowerCase("tr-TR"), Math.max(0.5, getSpeechRate() * 0.85));
+    saveTeacherLetters(count);
   });
   const wCount = buildPool(2, teacherPendingCount).length;
   const sCount = buildPool(3, teacherPendingCount).length;
@@ -1719,16 +1751,22 @@ async function loadTeacherClassWords(classId) {
       cloudClassWords = rows;
       renderCloudBadges();
     }
+    const known = knownGlobalSet();
+    const visibleRows = rows.filter(
+      (r) => r.status !== "approved" && !known.has(`${r.kind}:${String(r.text || "").toLocaleUpperCase("tr-TR")}`)
+    );
     listEl.innerHTML = "";
-    if (!rows.length) {
-      listEl.textContent = "Bu sınıfta henüz eklenmiş kelime/ödev yok.";
+    if (!visibleRows.length) {
+      listEl.textContent = rows.length
+        ? "Bu sınıfa özel kelime yok (onaylananlar tüm oyuna eklendi)."
+        : "Bu sınıfta henüz eklenmiş kelime/ödev yok.";
       return;
     }
-    for (const r of rows) {
+    for (const r of visibleRows) {
       const item = document.createElement("div");
       item.className = "class-word-item";
       const left = document.createElement("span");
-      const statusLabel = r.status === "approved" ? "Ortakta" : r.status === "rejected" ? "Özel" : "Onay bekliyor";
+      const statusLabel = r.status === "approved" ? "Ortakta" : r.status === "rejected" ? "Sınıfa özel" : "Onay bekliyor";
       const statusCls = r.status === "approved" ? "ok" : r.status === "pending" ? "wait" : "";
       left.append(document.createTextNode(`${r.emoji} `));
       const bold = document.createElement("b");
@@ -1826,27 +1864,6 @@ $("previewClassBtn").onclick = async () => {
   newSession();
 };
 
-$("saveClassLettersBtn").onclick = async () => {
-  const cls = getSelectedTeacherClass();
-  if (!cls) return;
-  const st = $("teacherLetterState");
-  st.textContent = "Kaydediliyor...";
-  st.hidden = false;
-  try {
-    await cloudUpdateClassSettings(cls.id, { letter_count: teacherPendingCount });
-    cls.letter_count = teacherPendingCount;
-    if (cloudClass && cloudClass.id === cls.id) {
-      cloudClass.letter_count = teacherPendingCount;
-      applyClassLetters(cloudClass);
-      renderHeader();
-      newSession();
-    }
-    st.textContent = `✅ "${cls.name}" sınıfı ${teacherPendingCount}. harfe (${order[teacherPendingCount - 1]}) güncellendi.`;
-  } catch (e) {
-    st.textContent = "❌ Kaydedilemedi: " + e.message;
-  }
-};
-
 $("publishScanBtn").onclick = async () => {
   const cls = getSelectedTeacherClass();
   if (!cls) {
@@ -1938,6 +1955,8 @@ async function loadAdminQueue() {
           });
           cloudGlobal = await cloudLoadGlobalWords();
           await loadAdminQueue();
+          const selCls = getSelectedTeacherClass();
+          if (selCls) await loadTeacherClassWords(selCls.id);
         } catch (e) {
           okBtn.disabled = false;
           setAdminState("❌ Hata: " + e.message);
@@ -2001,6 +2020,8 @@ $("approveAllPendingBtn").onclick = async () => {
     for (const p of pendingItems) await cloudApproveToGlobal(p);
     cloudGlobal = await cloudLoadGlobalWords();
     await loadAdminQueue();
+    const selCls = getSelectedTeacherClass();
+    if (selCls) await loadTeacherClassWords(selCls.id);
     setAdminState("✅ Tüm bekleyen öğeler ortak havuza eklendi!");
   } catch (e) {
     setAdminState("❌ Hata: " + e.message);

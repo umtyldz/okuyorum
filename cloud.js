@@ -374,6 +374,13 @@ async function cloudApproveToGlobal(item) {
       body: { status: "approved", emoji }
     }
   );
+  if (item.id) {
+    await sbFetch(`/rest/v1/class_words?id=eq.${encodeURIComponent(item.id)}`, {
+      method: "PATCH",
+      requireAuth: true,
+      body: { status: "approved", emoji }
+    });
+  }
 }
 
 async function cloudRejectSuggestion(id) {
