@@ -4,7 +4,8 @@
    ===================================================================== */
 "use strict";
 
-const ADMIN_VERSION = "v28";
+const ADMIN_VERSION = "v29";
+const LAST_SCHOOL_LS = "okuyorum.lastSchoolName";
 const $ = (id) => document.getElementById(id);
 
 let adminProfile = null;
@@ -115,7 +116,14 @@ $("tabBtnGlobal").onclick = () => switchTab("global");
 /* ---------- ÖĞRETMEN & SINIF YÖNETİMİ ---------- */
 
 function teacherDisplayName(t) {
-  return t.full_name ? `${t.full_name} (${t.email})` : t.email;
+  const base = t.full_name ? `${t.full_name} (${t.email})` : t.email;
+  return t.school_name ? `${base} — ${t.school_name}` : base;
+}
+
+function syncNewClassSchoolFromTeacher() {
+  const tid = $("newClassTeacher").value;
+  const t = allTeachers.find((x) => x.id === tid);
+  if (t && t.school_name) $("newClassSchool").value = t.school_name;
 }
 
 function populateTeacherDropdowns() {
@@ -130,7 +138,10 @@ function populateTeacherDropdowns() {
     sel.appendChild(opt);
   }
   if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  if (!$("newClassSchool").value.trim()) syncNewClassSchoolFromTeacher();
 }
+
+$("newClassTeacher").onchange = syncNewClassSchoolFromTeacher;
 
 function renderTeachersList() {
   const listEl = $("teachersList");
@@ -143,6 +154,7 @@ function renderTeachersList() {
   const filtered = allTeachers.filter((t) => {
     if (!q) return true;
     return (t.full_name || "").toLocaleLowerCase("tr-TR").includes(q) ||
+      (t.school_name || "").toLocaleLowerCase("tr-TR").includes(q) ||
       (t.email || "").toLocaleLowerCase("tr-TR").includes(q);
   });
   setState("teachersState", `${filtered.length} hesap gösteriliyor.`, filtered.length === 0);
@@ -166,6 +178,7 @@ function renderTeachersList() {
     emailTxt.textContent = t.email;
     info.append(title, emailTxt);
     info.append(makeBadge(t.role === "admin" ? "👑 Yönetici" : "👩‍🏫 Öğretmen", t.role === "admin" ? "admin" : ""));
+    if (t.school_name) info.append(makeBadge(`🏛️ ${t.school_name}`));
 
     const ownedClasses = allClasses.filter((c) => c.teacher_id === t.id);
     for (const c of ownedClasses) info.append(makeBadge(`🏫 ${c.name}`, "cls"));
@@ -173,6 +186,12 @@ function renderTeachersList() {
     const editBox = document.createElement("div");
     editBox.className = "edit-box";
     editBox.hidden = true;
+
+    const schoolIn = document.createElement("input");
+    schoolIn.type = "text";
+    schoolIn.value = t.school_name || "";
+    schoolIn.placeholder = "Okul adı";
+    schoolIn.style.textTransform = "uppercase";
 
     const nameIn = document.createElement("input");
     nameIn.type = "text";
@@ -203,7 +222,8 @@ function renderTeachersList() {
         const payload = {
           action: "update",
           userId: t.id,
-          teacherName: nameIn.value.trim()
+          teacherName: nameIn.value.trim(),
+          schoolName: schoolIn.value.trim().toLocaleUpperCase("tr-TR")
         };
         const nextMail = mailIn.value.trim().toLowerCase();
         if (nextMail && nextMail !== (t.email || "").toLowerCase()) payload.email = nextMail;
@@ -218,6 +238,7 @@ function renderTeachersList() {
     });
 
     editBox.append(
+      wrapField("Okul Adı", schoolIn),
       wrapField("Ad Soyad", nameIn),
       wrapField("E-posta", mailIn),
       wrapField("Yeni Şifre (isteğe bağlı)", passIn),
@@ -269,7 +290,7 @@ function renderClassesList() {
     const lc = Math.min(Math.max(1, c.letter_count || 6), LETTER_ORDER.length);
 
     const bName = document.createElement("b");
-    bName.textContent = `🏫 ${c.name}`;
+    bName.textContent = `🏫 ${c.school_name ? c.school_name + " - " : ""}${c.name}`;
     info.append(
       bName,
       makeBadge(`Kod: ${c.code}`, "cls"),
@@ -280,6 +301,12 @@ function renderClassesList() {
     const editBox = document.createElement("div");
     editBox.className = "edit-box";
     editBox.hidden = true;
+
+    const schoolIn = document.createElement("input");
+    schoolIn.type = "text";
+    schoolIn.value = c.school_name || "";
+    schoolIn.placeholder = "Okul adı";
+    schoolIn.style.textTransform = "uppercase";
 
     const nameIn = document.createElement("input");
     nameIn.type = "text";
@@ -321,6 +348,7 @@ function renderClassesList() {
       try {
         const pickedTeacher = allTeachers.find((t) => t.id === teacherSel.value);
         const fields = {
+          school_name: schoolIn.value.trim().toLocaleUpperCase("tr-TR"),
           name: nameIn.value.trim().toLocaleUpperCase("tr-TR") || c.name,
           code: codeIn.value.trim().toUpperCase() || c.code,
           letter_count: Math.min(LETTER_ORDER.length, Math.max(1, Number(letterIn.value) || 6))
@@ -339,6 +367,7 @@ function renderClassesList() {
     });
 
     editBox.append(
+      wrapField("Okul Adı", schoolIn),
       wrapField("Sınıf Adı", nameIn),
       wrapField("Davet Kodu", codeIn),
       wrapField("Öğretmen", teacherSel),
@@ -356,7 +385,8 @@ function renderClassesList() {
       }),
       makeBtn("💬 WhatsApp", "good", () => {
         const link = classShareLink(c.code);
-        const msg = `Merhaba, Okuyorum ${c.name} sınıfı linkimiz:\n${link}\n(Sınıf kodu: ${c.code})`;
+        const schoolPart = c.school_name ? `${c.school_name} ` : "";
+        const msg = `Merhaba, Okuyorum ${schoolPart}${c.name} sınıfı linkimiz:\n${link}\n(Sınıf kodu: ${c.code})`;
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
       }),
       makeBtn("🗑️ Sil", "danger", async () => {
@@ -405,6 +435,7 @@ $("teacherSearch").oninput = renderTeachersList;
 $("refreshTeachersBtn").onclick = loadTeachersAndClasses;
 
 $("createTeacherBtn").onclick = async () => {
+  const schoolName = $("newTeacherSchool").value.trim().toLocaleUpperCase("tr-TR");
   const tName = $("newTeacherName").value.trim();
   const email = $("newTeacherEmail").value.trim();
   const pass = $("newTeacherPass").value;
@@ -413,16 +444,18 @@ $("createTeacherBtn").onclick = async () => {
     setState("createTeacherState", "Öğretmen adı, e-posta, şifre ve sınıfı yazın.");
     return;
   }
+  if (schoolName) cloudSetLS(LAST_SCHOOL_LS, schoolName);
   setState("createTeacherState", "Öğretmen ve sınıf oluşturuluyor...");
   $("createTeacherBtn").disabled = true;
   try {
-    const res = await cloudCreateTeacher(tName, email, pass, clsName);
+    const res = await cloudCreateTeacher(tName, email, pass, clsName, schoolName);
     $("newTeacherName").value = "";
     $("newTeacherEmail").value = "";
     $("newTeacherPass").value = "";
     $("newTeacherClass").value = "";
     const verb = res.action === "assigned" ? "atandı" : "oluşturuldu";
-    setState("createTeacherState", `✅ ${tName} (${res.teacher.email}) için "${res.cls.name}" ${verb}. Link: ${classShareLink(res.cls.code)}`);
+    const schoolTag = schoolName ? `${schoolName} · ` : "";
+    setState("createTeacherState", `✅ ${tName} (${res.teacher.email}) için "${schoolTag}${res.cls.name}" ${verb}. Kod: ${res.cls.code} · Link: ${classShareLink(res.cls.code)}`);
     await loadTeachersAndClasses();
   } catch (e) {
     setState("createTeacherState", "❌ " + e.message);
@@ -432,6 +465,7 @@ $("createTeacherBtn").onclick = async () => {
 };
 
 $("createClassBtn").onclick = async () => {
+  const schoolName = $("newClassSchool").value.trim().toLocaleUpperCase("tr-TR");
   const name = $("newClassName").value.trim().toLocaleUpperCase("tr-TR");
   if (!name) return;
   const code = name.replace(/[^A-ZÇĞİÖŞÜ0-9]/g, "") || `S${100 + Math.floor(Math.random() * 900)}`;
@@ -439,9 +473,9 @@ $("createClassBtn").onclick = async () => {
   const tObj = allTeachers.find((t) => t.id === tid);
   const tName = (tObj && tObj.full_name) || "";
   try {
-    const created = await cloudCreateClass(name, code, 6, tName, tid);
+    const created = await cloudCreateClass(name, code, 6, tName, tid, schoolName);
     $("newClassName").value = "";
-    setState("classesState", `✅ "${created.name}" (${created.code}) sınıfı oluşturuldu.`);
+    setState("classesState", `✅ "${created.school_name ? created.school_name + " - " : ""}${created.name}" (${created.code}) sınıfı oluşturuldu.`);
     await loadTeachersAndClasses();
   } catch (e) {
     setState("classesState", "❌ " + e.message);
@@ -519,7 +553,10 @@ function renderPendingList() {
     refreshUnlock();
     txtIn.oninput = refreshUnlock;
 
-    const clsBadge = makeBadge(`🏫 ${(p.classes && p.classes.name) || "Sınıf"}`, "cls");
+    const clsObj = allClasses.find((c) => c.id === p.class_id);
+    const clsName = (p.classes && p.classes.name) || (clsObj && clsObj.name) || "Sınıf";
+    const clsSchool = (clsObj && clsObj.school_name) ? `${clsObj.school_name} · ` : "";
+    const clsBadge = makeBadge(`🏫 ${clsSchool}${clsName}`, "cls");
 
     const okBtn = makeBtn("✅ Ortak Havuza Al", "good", async () => {
       okBtn.disabled = true;
@@ -923,4 +960,5 @@ $("adminSwitchAccountBtn").onclick = () => {
 };
 
 $("adminVer").textContent = `Okuyorum Yönetim · ${ADMIN_VERSION}`;
+$("newTeacherSchool").value = cloudGetLS(LAST_SCHOOL_LS) || "";
 refreshAdminSession();

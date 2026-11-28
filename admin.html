@@ -14,8 +14,8 @@
 <body>
   <header class="adm-header">
     <div class="adm-brand">
-      <div class="adm-title">👑 ALİ KUŞÇU — Yönetim Paneli</div>
-      <div class="adm-subtitle">Okuyorum Okul, Öğretmen ve Ortak Kelime Havuzu Yönetimi</div>
+      <div class="adm-title">👑 OKUYORUM — Yönetim Paneli</div>
+      <div class="adm-subtitle">Okul, Öğretmen, Sınıf ve Ortak Kelime Havuzu Yönetimi</div>
     </div>
     <div class="adm-header-actions">
       <span id="adminUserChip" class="adm-chip" hidden></span>
@@ -93,8 +93,9 @@
         <!-- Yeni öğretmen + sınıf ekle -->
         <div class="adm-card">
           <h3>➕ Yeni Öğretmen & Sınıf Ekle</h3>
-          <p class="adm-muted">Öğretmen hesabı otomatik onaylı açılır; yazdığınız sınıf (ör. 1B, 1F) yoksa oluşturulur, varsa öğretmene atanır.</p>
+          <p class="adm-muted">Okul adı, öğretmen ve sınıf girin; hesap otomatik onaylı açılır ve sınıf öğretmene atanır.</p>
           <div class="adm-stack">
+            <input id="newTeacherSchool" type="text" placeholder="Okul adı (ör: ALİ KUŞÇU İLKOKULU)" autocomplete="off" style="text-transform:uppercase">
             <input id="newTeacherName" type="text" placeholder="Öğretmen adı (ör: Ayşe Yılmaz)" autocomplete="off">
             <input id="newTeacherEmail" type="email" placeholder="ogretmen@okul.com" autocomplete="off">
             <input id="newTeacherPass" type="password" placeholder="Şifre (en az 6 karakter)" autocomplete="new-password">
@@ -109,6 +110,7 @@
           <h3>🏫 Ek Sınıf Oluştur</h3>
           <p class="adm-muted">Mevcut bir öğretmene veya yöneticiye yeni şube/sınıf ekleyin.</p>
           <div class="adm-stack">
+            <input id="newClassSchool" type="text" placeholder="Okul adı (ör: ALİ KUŞÇU İLKOKULU)" autocomplete="off" style="text-transform:uppercase">
             <input id="newClassName" type="text" placeholder="Sınıf adı (ör: 1G)" autocomplete="off" style="text-transform:uppercase">
             <select id="newClassTeacher"></select>
             <button id="createClassBtn" class="adm-btn good" type="button">+ Sınıf Oluştur</button>
@@ -122,7 +124,7 @@
         <div class="adm-card-head">
           <h3>👩‍🏫 Kayıtlı Öğretmenler & Yöneticiler</h3>
           <div class="adm-row">
-            <input id="teacherSearch" type="search" placeholder="Ad veya e-posta ara...">
+            <input id="teacherSearch" type="search" placeholder="Okul, ad veya e-posta ara...">
             <button id="refreshTeachersBtn" class="adm-btn ghost small" type="button">🔄 Yenile</button>
           </div>
         </div>

@@ -1,9 +1,9 @@
 // Supabase Edge Function: create-teacher
 // Yalnızca Admin kullanıcılar tarafından çağrılabilir.
 // action:
-//   - "list": Tüm kullanıcı/öğretmen ve sınıf listesini döner
+//   - "list": Tüm kullanıcı/öğretmen ve sınıf listesini döner (okul bilgisi dahil)
 //   - "create" (varsayılan): Öğretmen hesabını açar ve sınıfı oluşturur/atar
-//   - "update": Öğretmenin ad, e-posta ve/veya şifresini günceller
+//   - "update": Öğretmenin ad, okul, e-posta ve/veya şifresini günceller
 //   - "delete": Öğretmeni siler (sınıflarını güvenli biçimde yöneticiye devreder)
 
 const CORS_HEADERS = {
@@ -26,6 +26,13 @@ function normalizeClassCode(raw: string) {
   };
   const replaced = raw.replace(/[çÇğĞıIİiöÖşŞüÜ]/g, (c) => trMap[c] || c);
   return replaced.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+}
+
+function schoolPrefix(schoolName: string) {
+  const words = String(schoolName || "").trim().split(/\s+/).map(normalizeClassCode).filter(Boolean);
+  if (words.length >= 2) return words.slice(0, 3).map((w) => w[0]).join("");
+  if (words.length === 1) return words[0].slice(0, 3);
+  return "S";
 }
 
 async function verifyAdmin(authHeader: string, supabaseUrl: string, anonKey: string, serviceKey: string) {
@@ -70,6 +77,7 @@ Deno.serve(async (req) => {
     action?: string;
     userId?: string;
     teacherName?: string;
+    schoolName?: string;
     email?: string;
     password?: string;
     className?: string;
@@ -94,16 +102,23 @@ Deno.serve(async (req) => {
       fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=200`, {
         headers: { "apikey": serviceKey, "Authorization": `Bearer ${serviceKey}` }
       }),
-      fetch(`${supabaseUrl}/rest/v1/profiles?select=id,role,full_name`, { headers: adminHeaders }),
+      fetch(`${supabaseUrl}/rest/v1/profiles?select=id,role,full_name,school_name`, { headers: adminHeaders }),
       fetch(`${supabaseUrl}/rest/v1/classes?select=*&order=created_at.desc`, { headers: adminHeaders })
     ]);
     if (!usersResp.ok) return jsonResp({ error: "Kullanıcı listesi alınamadı." }, 500);
     const usersData = await usersResp.json().catch(() => ({}));
     const rawUsers = Array.isArray(usersData?.users) ? usersData.users : [];
-    const profiles = profResp.ok ? await profResp.json().catch(() => []) : [];
+    let profiles = profResp.ok ? await profResp.json().catch(() => []) : null;
+    if (!profiles) {
+      // school_name sütunu henüz eklenmemişse onsuz dene
+      const fallbackProf = await fetch(`${supabaseUrl}/rest/v1/profiles?select=id,role,full_name`, {
+        headers: adminHeaders
+      });
+      profiles = fallbackProf.ok ? await fallbackProf.json().catch(() => []) : [];
+    }
     const classes = clsResp.ok ? await clsResp.json().catch(() => []) : [];
 
-    const profMap = new Map<string, { role?: string; full_name?: string }>();
+    const profMap = new Map<string, { role?: string; full_name?: string; school_name?: string }>();
     for (const p of Array.isArray(profiles) ? profiles : []) {
       profMap.set(p.id, p);
     }
@@ -115,6 +130,7 @@ Deno.serve(async (req) => {
         id,
         email: String(u.email || ""),
         full_name: String(p.full_name || ""),
+        school_name: String(p.school_name || ""),
         role: String(p.role || "teacher"),
         created_at: u.created_at || null,
         last_sign_in_at: u.last_sign_in_at || null
@@ -124,13 +140,15 @@ Deno.serve(async (req) => {
     return jsonResp({ teachers, classes }, 200);
   }
 
-  // --- UPDATE: Öğretmen adı / e-posta / şifre güncelle ---
+  // --- UPDATE: Öğretmen adı / okul adı / e-posta / şifre güncelle ---
   if (action === "update") {
     const userId = String(body.userId || "").trim();
     if (!userId) return jsonResp({ error: "Kullanıcı kimliği (userId) gerekli." }, 400);
 
     const hasName = body.teacherName !== undefined;
+    const hasSchool = body.schoolName !== undefined;
     const teacherName = hasName ? String(body.teacherName || "").trim() : undefined;
+    const schoolName = hasSchool ? String(body.schoolName || "").trim().toLocaleUpperCase("tr-TR") : undefined;
     const email = body.email !== undefined ? String(body.email || "").trim().toLowerCase() : "";
     const password = body.password !== undefined ? String(body.password || "") : "";
 
@@ -161,18 +179,39 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (hasName) {
-      await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+    if (hasName || hasSchool) {
+      const profPatch: Record<string, unknown> = {};
+      if (hasName) profPatch.full_name = teacherName;
+      if (hasSchool) profPatch.school_name = schoolName;
+      const pResp = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
         method: "PATCH",
         headers: adminHeaders,
-        body: JSON.stringify({ full_name: teacherName })
+        body: JSON.stringify(profPatch)
       });
-      // Öğretmenin sahip olduğu sınıflardaki teacher_name alanını da güncelle (sütun yoksa sessizce geç)
-      await fetch(`${supabaseUrl}/rest/v1/classes?teacher_id=eq.${encodeURIComponent(userId)}`, {
+      if (!pResp.ok && hasSchool && hasName) {
+        await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+          method: "PATCH",
+          headers: adminHeaders,
+          body: JSON.stringify({ full_name: teacherName })
+        }).catch(() => {});
+      }
+
+      // Öğretmenin sahip olduğu sınıflardaki teacher_name / school_name alanlarını da güncelle
+      const clsPatch: Record<string, unknown> = {};
+      if (hasName) clsPatch.teacher_name = teacherName;
+      if (hasSchool) clsPatch.school_name = schoolName;
+      const cResp = await fetch(`${supabaseUrl}/rest/v1/classes?teacher_id=eq.${encodeURIComponent(userId)}`, {
         method: "PATCH",
         headers: adminHeaders,
-        body: JSON.stringify({ teacher_name: teacherName })
-      }).catch(() => {});
+        body: JSON.stringify(clsPatch)
+      });
+      if (!cResp.ok && hasSchool && hasName) {
+        await fetch(`${supabaseUrl}/rest/v1/classes?teacher_id=eq.${encodeURIComponent(userId)}`, {
+          method: "PATCH",
+          headers: adminHeaders,
+          body: JSON.stringify({ teacher_name: teacherName })
+        }).catch(() => {});
+      }
     }
 
     return jsonResp({ ok: true, userId }, 200);
@@ -216,15 +255,16 @@ Deno.serve(async (req) => {
 
   // --- CREATE (varsayılan): Yeni öğretmen + sınıf ---
   const teacherName = String(body.teacherName || "").trim();
+  const schoolName = String(body.schoolName || "").trim().toLocaleUpperCase("tr-TR");
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
   const className = String(body.className || "").trim().toLocaleUpperCase("tr-TR");
-  const code = normalizeClassCode(className);
+  const baseCode = normalizeClassCode(className);
 
   if (!teacherName) return jsonResp({ error: "Öğretmen adını girin." }, 400);
   if (!email || !email.includes("@")) return jsonResp({ error: "Geçerli bir e-posta girin." }, 400);
   if (password.length < 6) return jsonResp({ error: "Şifre en az 6 karakter olmalı." }, 400);
-  if (!className || !code) return jsonResp({ error: "Sınıf adı/kodu girin (ör: 1B veya 1H)." }, 400);
+  if (!className || !baseCode) return jsonResp({ error: "Sınıf adı/kodu girin (ör: 1B veya 1F)." }, 400);
 
   // 1) Öğretmen hesabını oluştur (otomatik onaylı)
   const createResp = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
@@ -242,24 +282,49 @@ Deno.serve(async (req) => {
     return jsonResp({ error: errMsg }, 400);
   }
 
-  // Öğretmen adını profiles tablosuna yaz
-  await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(createData.id)}`, {
+  // Öğretmen adını ve okulunu profiles tablosuna yaz
+  const profPatchResp = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(createData.id)}`, {
     method: "PATCH",
     headers: adminHeaders,
-    body: JSON.stringify({ full_name: teacherName })
+    body: JSON.stringify({ full_name: teacherName, school_name: schoolName })
   });
+  if (!profPatchResp.ok) {
+    await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(createData.id)}`, {
+      method: "PATCH",
+      headers: adminHeaders,
+      body: JSON.stringify({ full_name: teacherName })
+    }).catch(() => {});
+  }
 
-  // 2) Sınıf kodu zaten varsa yeni öğretmene ata; yoksa oluştur
-  const findResp = await fetch(
-    `${supabaseUrl}/rest/v1/classes?code=eq.${encodeURIComponent(code)}&select=*`,
-    { headers: adminHeaders }
-  );
-  const existing = findResp.ok ? (await findResp.json())?.[0] : null;
+  // 2) Sınıf kodu kontrolü: aynı okuldaysa (veya mevcut okul boşsa) ata; farklı okuldaysa çakışmasız yeni kod üret
+  async function findClassByCode(c: string) {
+    const r = await fetch(
+      `${supabaseUrl}/rest/v1/classes?code=eq.${encodeURIComponent(c)}&select=*`,
+      { headers: adminHeaders }
+    );
+    return r.ok ? (await r.json())?.[0] : null;
+  }
 
-  async function upsertClass(withTeacherName: boolean) {
-    if (existing?.id) {
+  const existing = await findClassByCode(baseCode);
+  const existingSchool = String(existing?.school_name || "").trim().toLocaleUpperCase("tr-TR");
+  const canAssignExisting = !!(existing?.id && (existingSchool === "" || existingSchool === schoolName));
+
+  let targetCode = baseCode;
+  if (existing?.id && !canAssignExisting) {
+    const prefix = schoolPrefix(schoolName);
+    let candidate = (prefix + baseCode).slice(0, 14);
+    let n = 2;
+    while (await findClassByCode(candidate)) {
+      candidate = (prefix + baseCode + String(n++)).slice(0, 14);
+    }
+    targetCode = candidate;
+  }
+
+  async function upsertClass(withTeacherName: boolean, withSchoolName: boolean) {
+    if (canAssignExisting) {
       const patchBody: Record<string, unknown> = { teacher_id: createData.id, name: className };
       if (withTeacherName) patchBody.teacher_name = teacherName;
+      if (withSchoolName) patchBody.school_name = schoolName;
       return fetch(`${supabaseUrl}/rest/v1/classes?id=eq.${encodeURIComponent(existing.id)}`, {
         method: "PATCH",
         headers: adminHeaders,
@@ -268,11 +333,12 @@ Deno.serve(async (req) => {
     }
     const postBody: Record<string, unknown> = {
       name: className,
-      code,
+      code: targetCode,
       teacher_id: createData.id,
       letter_count: 6
     };
     if (withTeacherName) postBody.teacher_name = teacherName;
+    if (withSchoolName) postBody.school_name = schoolName;
     return fetch(`${supabaseUrl}/rest/v1/classes`, {
       method: "POST",
       headers: adminHeaders,
@@ -280,11 +346,17 @@ Deno.serve(async (req) => {
     });
   }
 
-  const clsAction = existing?.id ? "assigned" : "created";
-  let clsResp = await upsertClass(true);
+  const clsAction = canAssignExisting ? "assigned" : "created";
+  let withTeacher = true;
+  let withSchool = true;
+  let clsResp = await upsertClass(withTeacher, withSchool);
   let clsData = await clsResp.json().catch(() => null);
-  if (!clsResp.ok && /teacher_name/i.test(String(clsData?.message || ""))) {
-    clsResp = await upsertClass(false);
+  for (let attempt = 0; attempt < 2 && !clsResp.ok; attempt++) {
+    const msg = String(clsData?.message || "");
+    if (/school_name/i.test(msg)) withSchool = false;
+    else if (/teacher_name/i.test(msg)) withTeacher = false;
+    else break;
+    clsResp = await upsertClass(withTeacher, withSchool);
     clsData = await clsResp.json().catch(() => null);
   }
 
@@ -295,7 +367,7 @@ Deno.serve(async (req) => {
   }
 
   return jsonResp({
-    teacher: { id: createData.id, email: createData.email, name: teacherName },
+    teacher: { id: createData.id, email: createData.email, name: teacherName, school: schoolName },
     cls: clsData[0],
     action: clsAction
   }, 200);

@@ -2,7 +2,7 @@
    service-worker.js — temel dosyaları önbelleğe alır (çevrimdışı çalışır).
    Dosyalarda değişiklik yaptığınızda CACHE_VERSION sayısını artırın.
    ===================================================================== */
-const CACHE_VERSION = "okuyorum-v28";
+const CACHE_VERSION = "okuyorum-v29";
 const FILES = [
   "./", "./index.html", "./style.css", "./words.js", "./cloud.js", "./app.js",
   "./admin.html", "./admin.css", "./admin.js",

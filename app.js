@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v28";
+const APP_VERSION = "v29";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -1370,11 +1370,12 @@ function applyClassLetters(cls) {
 }
 
 function renderCloudBadges() {
+  const sName = String((cloudClass && cloudClass.school_name) || "").trim().toLocaleUpperCase("tr-TR");
   const schoolTitleEl = $("schoolTitle");
   if (schoolTitleEl) {
     schoolTitleEl.textContent = cloudClass && cloudClass.name
-      ? `ALİ KUŞÇU - ${cloudClass.name}`
-      : "ALİ KUŞÇU";
+      ? (sName ? `${sName} - ${cloudClass.name}` : `OKUYORUM - ${cloudClass.name}`)
+      : "OKUYORUM";
   }
   const hwCount = cloudClassWords.filter((w) => w.is_homework).length;
   $("homeworkTab").hidden = hwCount === 0;
@@ -1389,7 +1390,8 @@ function renderCloudBadges() {
     $("classJoinForm").hidden = true;
     $("classConnectedBox").hidden = false;
     const tName = cloudClass.teacher_name ? ` — ${cloudClass.teacher_name}` : "";
-    $("classConnectedInfo").textContent = `🏫 ${cloudClass.name}${tName}` + (hwCount ? ` · ${hwCount} ödev` : "");
+    const schoolPrefix = sName ? `${sName} · ` : "";
+    $("classConnectedInfo").textContent = `🏫 ${schoolPrefix}${cloudClass.name}${tName}` + (hwCount ? ` · ${hwCount} ödev` : "");
     $("classJoinState").hidden = true;
   } else {
     badge.hidden = true;
@@ -1710,7 +1712,7 @@ function renderTeacherClasses() {
   for (const c of teacherClasses) {
     const opt = document.createElement("option");
     opt.value = c.id;
-    opt.textContent = `${c.name} (${c.code})`;
+    opt.textContent = `${c.school_name ? c.school_name + " · " : ""}${c.name} (${c.code})`;
     sel.appendChild(opt);
   }
   if (prevId && teacherClasses.some((c) => c.id === prevId)) sel.value = prevId;
@@ -1729,7 +1731,8 @@ async function updateSelectedClassBox() {
     $("classWordsBox").hidden = true;
     return;
   }
-  $("teacherClassHeading").textContent = `🏫 Sınıfım: ${cls.name}` +
+  const schoolPart = cls.school_name ? `${cls.school_name} - ` : "";
+  $("teacherClassHeading").textContent = `🏫 Sınıfım: ${schoolPart}${cls.name}` +
     (cls.teacher_name ? ` — ${cls.teacher_name}` : "");
   $("classShareRow").hidden = false;
   $("classShareUrl").value = classShareLink(cls.code);
@@ -1837,7 +1840,8 @@ $("whatsappShareBtn").onclick = () => {
   const cls = getSelectedTeacherClass();
   if (!cls) return;
   const link = classShareLink(cls.code);
-  const text = `Merhaba, Okuyorum ${cls.name} sınıfı linkimiz:\n${link}\n(Sınıf kodu: ${cls.code})`;
+  const schoolPart = cls.school_name ? `${cls.school_name} ` : "";
+  const text = `Merhaba, Okuyorum ${schoolPart}${cls.name} sınıfı linkimiz:\n${link}\n(Sınıf kodu: ${cls.code})`;
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
 };
 

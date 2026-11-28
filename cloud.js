@@ -223,7 +223,7 @@ async function cloudListMyClasses(isAdmin) {
   return Array.isArray(rows) ? rows : [];
 }
 
-async function cloudCreateClass(name, code, letterCount, teacherName = "", teacherId = "") {
+async function cloudCreateClass(name, code, letterCount, teacherName = "", teacherId = "", schoolName = "") {
   const s = await sbEnsureValidSession();
   if (!s) throw new Error("Giriş gerekli.");
   const payload = {
@@ -233,6 +233,7 @@ async function cloudCreateClass(name, code, letterCount, teacherName = "", teach
     letter_count: Math.max(0, Math.min(29, Number(letterCount) || 6))
   };
   if (teacherName) payload.teacher_name = String(teacherName).trim();
+  if (schoolName) payload.school_name = String(schoolName).trim().toLocaleUpperCase("tr-TR");
   try {
     const rows = await sbFetch("/rest/v1/classes", {
       method: "POST",
@@ -242,8 +243,9 @@ async function cloudCreateClass(name, code, letterCount, teacherName = "", teach
     });
     return rows && rows[0];
   } catch (e) {
-    if (payload.teacher_name && /teacher_name/i.test(e.message)) {
-      delete payload.teacher_name;
+    if ((payload.teacher_name || payload.school_name) && /teacher_name|school_name/i.test(e.message)) {
+      if (/school_name/i.test(e.message)) delete payload.school_name;
+      if (/teacher_name/i.test(e.message)) delete payload.teacher_name;
       const rows = await sbFetch("/rest/v1/classes", {
         method: "POST",
         requireAuth: true,
@@ -270,7 +272,7 @@ async function cloudUpdateClassSettings(classId, fields) {
     });
   } catch (e) {
     // Ek sütunlar henüz yoksa yalnızca letter_count güncellemeyi dene
-    if (/letter_order|teacher_name/i.test(e.message) && body.letter_count !== undefined) {
+    if (/letter_order|teacher_name|school_name/i.test(e.message) && body.letter_count !== undefined) {
       return sbFetch(`/rest/v1/classes?id=eq.${encodeURIComponent(classId)}`, {
         method: "PATCH",
         requireAuth: true,
@@ -411,8 +413,8 @@ async function cloudAdminTeachers(payload) {
   });
 }
 
-async function cloudCreateTeacher(teacherName, email, password, className) {
-  return cloudAdminTeachers({ action: "create", teacherName, email, password, className });
+async function cloudCreateTeacher(teacherName, email, password, className, schoolName = "") {
+  return cloudAdminTeachers({ action: "create", teacherName, email, password, className, schoolName });
 }
 
 async function cloudAddGlobalWords(items) {
