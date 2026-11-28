@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Okuyorum — Yönetim Paneli</title>
+  <meta name="theme-color" content="#ff7a59">
+  <link rel="icon" href="icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <header class="adm-header">
+    <div class="adm-brand">
+      <div class="adm-title">👑 ALİ KUŞÇU — Yönetim Paneli</div>
+      <div class="adm-subtitle">Okuyorum Okul, Öğretmen ve Ortak Kelime Havuzu Yönetimi</div>
+    </div>
+    <div class="adm-header-actions">
+      <span id="adminUserChip" class="adm-chip" hidden></span>
+      <a href="index.html" class="adm-btn ghost">🎮 Oyuna Dön</a>
+      <button id="adminLogoutBtn" class="adm-btn danger" type="button" hidden>Çıkış yap</button>
+    </div>
+  </header>
+
+  <!-- Giriş kartı -->
+  <section id="adminLoginCard" class="adm-card adm-narrow" hidden>
+    <h2>🔐 Yönetici Girişi</h2>
+    <p class="adm-muted">Bu sayfa yalnızca yönetici (admin) yetkisine sahip hesaplar içindir.</p>
+    <form id="adminLoginForm" class="adm-stack">
+      <label class="adm-label">
+        E-posta
+        <input id="adminEmail" type="email" placeholder="yonetici@okul.com" autocomplete="username" required>
+      </label>
+      <label class="adm-label">
+        Şifre
+        <input id="adminPass" type="password" placeholder="Şifre" autocomplete="current-password" required>
+      </label>
+      <button id="adminLoginBtn" class="adm-btn primary" type="submit">Giriş yap</button>
+    </form>
+    <div id="adminLoginMsg" class="adm-state" hidden></div>
+  </section>
+
+  <!-- Yetkisiz kullanıcı kartı -->
+  <section id="adminDeniedCard" class="adm-card adm-narrow" hidden>
+    <h2>⛔ Yönetici Yetkisi Gerekli</h2>
+    <p class="adm-muted">Şu anda standart öğretmen hesabıyla oturum açık. Yönetim panelini kullanmak için yönetici hesabıyla giriş yapın.</p>
+    <div class="adm-row">
+      <a href="index.html" class="adm-btn primary">🎮 Oyuna Dön</a>
+      <button id="adminSwitchAccountBtn" class="adm-btn ghost" type="button">Başka hesapla giriş yap</button>
+    </div>
+  </section>
+
+  <!-- Ana Yönetim Paneli -->
+  <main id="adminDash" class="adm-main" hidden>
+    <!-- Özet KPI kartları -->
+    <section class="adm-kpis" aria-label="Özet sayılar">
+      <div class="kpi-card">
+        <div class="kpi-num" id="kpiTeachers">0</div>
+        <div class="kpi-lbl">👩‍🏫 Öğretmen</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-num" id="kpiClasses">0</div>
+        <div class="kpi-lbl">🏫 Sınıf</div>
+      </div>
+      <div class="kpi-card kpi-warn">
+        <div class="kpi-num" id="kpiPending">0</div>
+        <div class="kpi-lbl">⏳ Onay Bekleyen</div>
+      </div>
+      <div class="kpi-card kpi-good">
+        <div class="kpi-num" id="kpiGlobal">0</div>
+        <div class="kpi-lbl">📚 Bulut Ortak Kelime</div>
+      </div>
+    </section>
+
+    <div id="edgeUpgradeNotice" class="adm-notice" hidden>
+      ℹ️ Öğretmen listeleme/düzenleme için Supabase üzerindeki <code>create-teacher</code> Edge Function kodunu güncelleyin (sınıf ve kelime yönetimi şu anda da çalışır).
+    </div>
+
+    <!-- Sekmeler -->
+    <nav class="adm-tabs" aria-label="Yönetim sekmeleri">
+      <button id="tabBtnTeachers" class="adm-tab active" type="button">👩‍🏫 Öğretmenler & Sınıflar</button>
+      <button id="tabBtnPending" class="adm-tab" type="button">
+        ✅ Onay Kuyruğu <span id="pendingTabBadge" class="tab-badge" hidden>0</span>
+      </button>
+      <button id="tabBtnGlobal" class="adm-tab" type="button">📚 Ortak Kelime Havuzu</button>
+    </nav>
+
+    <!-- SEKME 1: ÖĞRETMENLER VE SINIFLAR -->
+    <section id="tabTeachers" class="adm-tab-panel">
+      <div class="adm-grid-2">
+        <!-- Yeni öğretmen + sınıf ekle -->
+        <div class="adm-card">
+          <h3>➕ Yeni Öğretmen & Sınıf Ekle</h3>
+          <p class="adm-muted">Öğretmen hesabı otomatik onaylı açılır; yazdığınız sınıf (ör. 1B, 1F) yoksa oluşturulur, varsa öğretmene atanır.</p>
+          <div class="adm-stack">
+            <input id="newTeacherName" type="text" placeholder="Öğretmen adı (ör: Ayşe Yılmaz)" autocomplete="off">
+            <input id="newTeacherEmail" type="email" placeholder="ogretmen@okul.com" autocomplete="off">
+            <input id="newTeacherPass" type="password" placeholder="Şifre (en az 6 karakter)" autocomplete="new-password">
+            <input id="newTeacherClass" type="text" placeholder="Sınıf (ör: 1B veya 1F)" autocomplete="off" style="text-transform:uppercase">
+            <button id="createTeacherBtn" class="adm-btn primary" type="button">+ Öğretmen & Sınıf Oluştur</button>
+          </div>
+          <div id="createTeacherState" class="adm-state" hidden></div>
+        </div>
+
+        <!-- Yeni sınıf oluştur -->
+        <div class="adm-card">
+          <h3>🏫 Ek Sınıf Oluştur</h3>
+          <p class="adm-muted">Mevcut bir öğretmene veya yöneticiye yeni şube/sınıf ekleyin.</p>
+          <div class="adm-stack">
+            <input id="newClassName" type="text" placeholder="Sınıf adı (ör: 1G)" autocomplete="off" style="text-transform:uppercase">
+            <select id="newClassTeacher"></select>
+            <button id="createClassBtn" class="adm-btn good" type="button">+ Sınıf Oluştur</button>
+          </div>
+          <div id="classesState" class="adm-state" hidden></div>
+        </div>
+      </div>
+
+      <!-- Kayıtlı öğretmenler listesi -->
+      <div class="adm-card">
+        <div class="adm-card-head">
+          <h3>👩‍🏫 Kayıtlı Öğretmenler & Yöneticiler</h3>
+          <div class="adm-row">
+            <input id="teacherSearch" type="search" placeholder="Ad veya e-posta ara...">
+            <button id="refreshTeachersBtn" class="adm-btn ghost small" type="button">🔄 Yenile</button>
+          </div>
+        </div>
+        <div id="teachersState" class="adm-state" hidden></div>
+        <div id="teachersList" class="adm-list"></div>
+      </div>
+
+      <!-- Kayıtlı sınıflar listesi -->
+      <div class="adm-card">
+        <div class="adm-card-head">
+          <h3>🏫 Sınıflar & Harf Seviyeleri</h3>
+        </div>
+        <div id="classesList" class="adm-list"></div>
+      </div>
+    </section>
+
+    <!-- SEKME 2: ONAY KUYRUĞU -->
+    <section id="tabPending" class="adm-tab-panel" hidden>
+      <div class="adm-card">
+        <div class="adm-card-head">
+          <div>
+            <h3>✅ Ödevlerden Gelen Kelime & Cümle Onay Kuyruğu</h3>
+            <p class="adm-muted">Öğretmenlerin sınıflarına eklediği yeni kelimeleri kontrol edip tek tek veya topluca tüm oyunun ortak havuzuna alın. Yanındaki rozet kelimenin MEB 2024 sırasına göre kaçıncı harfte açılacağını gösterir.</p>
+          </div>
+          <div class="adm-row">
+            <select id="pendingClassFilter"></select>
+            <button id="refreshPendingBtn" class="adm-btn ghost small" type="button">🔄 Yenile</button>
+            <button id="approveAllPendingBtn" class="adm-btn good small" type="button">✅ Görünenleri Ortak Havuza Al</button>
+          </div>
+        </div>
+        <div id="pendingState" class="adm-state" hidden></div>
+        <div id="pendingList" class="adm-list"></div>
+      </div>
+    </section>
+
+    <!-- SEKME 3: ORTAK KELİME HAVUZU -->
+    <section id="tabGlobal" class="adm-tab-panel" hidden>
+      <div class="adm-grid-2">
+        <!-- Elle hızlı ekleme -->
+        <div class="adm-card">
+          <h3>✏️ Ortak Havuza Doğrudan Ekle</h3>
+          <p class="adm-muted">Her satıra bir kelime veya cümle yazın. İsterseniz sonuna boşlukla emoji ekleyin (ör: <code>KİTAP 📖</code>).</p>
+          <div class="adm-stack">
+            <select id="globalAddKind">
+              <option value="word">Kelime</option>
+              <option value="sentence">Cümle</option>
+            </select>
+            <textarea id="globalAddText" rows="5" placeholder="ELMA 🍎&#10;KALEM ✏️&#10;DEFTER 📓"></textarea>
+            <button id="globalAddBtn" class="adm-btn good" type="button">➕ Ortak Havuza Ekle</button>
+          </div>
+          <div id="globalAddState" class="adm-state" hidden></div>
+        </div>
+
+        <!-- Sayfa tarayıp doğrudan ortak havuza ekleme -->
+        <div class="adm-card">
+          <h3>📷 Sayfa Tara & Ortak Havuza Al</h3>
+          <p class="adm-muted">Kitap sayfası tarayın; yeni kelimeleri seçip doğrudan tüm okulun ortak havuzuna ekleyin.</p>
+          <input id="globalScanCamInput" type="file" accept="image/*" capture="environment" hidden>
+          <input id="globalScanGalInput" type="file" accept="image/*" hidden>
+          <div class="adm-row">
+            <button id="globalScanCamBtn" class="adm-btn primary small" type="button">📷 Kamera</button>
+            <button id="globalScanGalBtn" class="adm-btn ghost small" type="button">🖼️ Galeri</button>
+          </div>
+          <div id="globalScanState" class="adm-state" hidden></div>
+          <div id="globalScanReview" hidden>
+            <div id="globalScanList" class="adm-list compact"></div>
+            <div class="adm-row">
+              <button id="globalPublishScanBtn" class="adm-btn good small" type="button">🚀 Seçilenleri Ortak Havuza Ekle</button>
+              <button id="globalClearScanBtn" class="adm-btn ghost small" type="button">Temizle</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sistemdeki bulut ortak kelimeleri -->
+      <div class="adm-card">
+        <div class="adm-card-head">
+          <div>
+            <h3>📚 Sisteme Eklenen Ortak Kelimeler & Cümleler</h3>
+            <p id="globalStatsNote" class="adm-muted"></p>
+          </div>
+          <div class="adm-row">
+            <input id="globalSearch" type="search" placeholder="Kelime veya cümle ara...">
+            <select id="globalKindFilter">
+              <option value="all">Tümü</option>
+              <option value="word">Sadece Kelimeler</option>
+              <option value="sentence">Sadece Cümleler</option>
+            </select>
+            <button id="refreshGlobalBtn" class="adm-btn ghost small" type="button">🔄 Yenile</button>
+          </div>
+        </div>
+        <div id="globalListState" class="adm-state" hidden></div>
+        <div id="globalList" class="adm-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer id="adminVer" class="adm-footer">Okuyorum Yönetim</footer>
+
+  <script src="words.js"></script>
+  <script src="cloud.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

@@ -223,13 +223,13 @@ async function cloudListMyClasses(isAdmin) {
   return Array.isArray(rows) ? rows : [];
 }
 
-async function cloudCreateClass(name, code, letterCount, teacherName = "") {
+async function cloudCreateClass(name, code, letterCount, teacherName = "", teacherId = "") {
   const s = await sbEnsureValidSession();
   if (!s) throw new Error("Giriş gerekli.");
   const payload = {
     name: String(name || "").trim(),
     code: String(code || "").trim().toUpperCase(),
-    teacher_id: s.user.id,
+    teacher_id: teacherId || s.user.id,
     letter_count: Math.max(0, Math.min(29, Number(letterCount) || 6))
   };
   if (teacherName) payload.teacher_name = String(teacherName).trim();
@@ -402,11 +402,56 @@ async function cloudScanPage(imageBase64) {
   });
 }
 
-async function cloudCreateTeacher(teacherName, email, password, className) {
+async function cloudAdminTeachers(payload) {
   return sbFetch("/functions/v1/create-teacher", {
     method: "POST",
     requireAuth: true,
     timeoutMs: 20000,
-    body: { teacherName, email, password, className }
+    body: payload
+  });
+}
+
+async function cloudCreateTeacher(teacherName, email, password, className) {
+  return cloudAdminTeachers({ action: "create", teacherName, email, password, className });
+}
+
+async function cloudAddGlobalWords(items) {
+  const s = await sbEnsureValidSession();
+  if (!s) throw new Error("Giriş gerekli.");
+  const map = new Map();
+  for (const it of items) {
+    const kind = it.kind === "sentence" ? "sentence" : "word";
+    const text = String(it.text || "").trim().toLocaleUpperCase("tr-TR");
+    if (!text) continue;
+    const emoji = String(it.emoji || "").trim() || (kind === "sentence" ? "📖" : "⭐");
+    map.set(`${kind}:${text}`, { kind, text, emoji, created_by: s.user.id });
+  }
+  const rows = [...map.values()];
+  if (!rows.length) return [];
+  return sbFetch("/rest/v1/global_words?on_conflict=kind,text", {
+    method: "POST",
+    requireAuth: true,
+    headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: rows
+  });
+}
+
+async function cloudUpdateGlobalWord(id, fields) {
+  const body = {};
+  if (fields.kind !== undefined) body.kind = fields.kind === "sentence" ? "sentence" : "word";
+  if (fields.text !== undefined) body.text = String(fields.text || "").trim().toLocaleUpperCase("tr-TR");
+  if (fields.emoji !== undefined) body.emoji = String(fields.emoji || "").trim() || "⭐";
+  return sbFetch(`/rest/v1/global_words?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    requireAuth: true,
+    headers: { "Prefer": "return=representation" },
+    body
+  });
+}
+
+async function cloudDeleteGlobalWord(id) {
+  return sbFetch(`/rest/v1/global_words?id=eq.${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    requireAuth: true
   });
 }

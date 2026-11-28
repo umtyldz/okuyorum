@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v27";
+const APP_VERSION = "v28";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -1344,7 +1344,6 @@ let teacherProfile = null;
 let teacherClasses = [];
 let teacherPendingCount = 6;
 let scanItems = [];
-let pendingItems = [];
 let lastCloudSyncAt = 0;
 
 function applyClassLetters(cls) {
@@ -1896,135 +1895,9 @@ $("publishScanBtn").onclick = async () => {
     if (!cloudClass || cloudClass.id !== cls.id) {
       await connectClassByCode(cls.code, { quiet: true });
     }
-    if (teacherProfile && teacherProfile.role === "admin") await loadAdminQueue();
     setScanState(`🚀 ${chosen.length} öğe "${cls.name}" sınıfında anında yayınlandı!`);
   } catch (e) {
     setScanState("❌ Yayınlanamadı: " + e.message);
-  }
-};
-
-// --- Yönetici (Admin) Onay Kuyruğu ---
-function setAdminState(msg, show = true) {
-  const el = $("adminState");
-  el.textContent = msg;
-  el.hidden = !show;
-}
-
-async function loadAdminQueue() {
-  if (!teacherProfile || teacherProfile.role !== "admin") return;
-  const listEl = $("pendingList");
-  listEl.innerHTML = "";
-  setAdminState("Bekleyen öneriler yükleniyor...");
-  try {
-    pendingItems = await cloudLoadPendingSuggestions();
-    if (!pendingItems.length) {
-      setAdminState("✅ Onay bekleyen yeni kelime yok.");
-      return;
-    }
-    setAdminState(`${pendingItems.length} yeni kelime/cümle ortak havuz için onay bekliyor.`);
-    for (const p of pendingItems) {
-      const row = document.createElement("div");
-      row.className = "pending-item";
-
-      const txt = document.createElement("input");
-      txt.type = "text";
-      txt.className = "scan-text";
-      txt.value = p.text;
-
-      const em = document.createElement("input");
-      em.type = "text";
-      em.className = "scan-emoji";
-      em.value = p.emoji || "⭐";
-
-      const meta = document.createElement("span");
-      meta.className = "badge-tag";
-      meta.textContent = p.classes ? p.classes.name : "Sınıf";
-
-      const okBtn = document.createElement("button");
-      okBtn.type = "button";
-      okBtn.className = "mini-btn ok";
-      okBtn.textContent = "✅ Ortak Havuza Al";
-      okBtn.onclick = async () => {
-        okBtn.disabled = true;
-        try {
-          await cloudApproveToGlobal({
-            id: p.id,
-            kind: p.kind,
-            text: txt.value.trim().toLocaleUpperCase("tr-TR"),
-            emoji: em.value.trim()
-          });
-          cloudGlobal = await cloudLoadGlobalWords();
-          await loadAdminQueue();
-          const selCls = getSelectedTeacherClass();
-          if (selCls) await loadTeacherClassWords(selCls.id);
-        } catch (e) {
-          okBtn.disabled = false;
-          setAdminState("❌ Hata: " + e.message);
-        }
-      };
-
-      const noBtn = document.createElement("button");
-      noBtn.type = "button";
-      noBtn.className = "mini-btn bad";
-      noBtn.textContent = "Reddet";
-      noBtn.onclick = async () => {
-        await cloudRejectSuggestion(p.id);
-        await loadAdminQueue();
-      };
-
-      row.append(txt, em, meta, okBtn, noBtn);
-      listEl.appendChild(row);
-    }
-  } catch (e) {
-    setAdminState("❌ Kuyruk yüklenemedi: " + e.message);
-  }
-}
-
-$("refreshPendingBtn").onclick = loadAdminQueue;
-
-$("createTeacherBtn").onclick = async () => {
-  const tName = $("newTeacherName").value.trim();
-  const email = $("newTeacherEmail").value.trim();
-  const pass = $("newTeacherPass").value;
-  const clsName = $("newTeacherClass").value.trim();
-  const st = $("createTeacherState");
-  if (!tName || !email || !pass || !clsName) {
-    st.textContent = "Öğretmen adı, e-posta, şifre ve sınıfı yazın.";
-    st.hidden = false;
-    return;
-  }
-  st.textContent = "Öğretmen ve sınıf oluşturuluyor...";
-  st.hidden = false;
-  $("createTeacherBtn").disabled = true;
-  try {
-    const res = await cloudCreateTeacher(tName, email, pass, clsName);
-    $("newTeacherName").value = "";
-    $("newTeacherEmail").value = "";
-    $("newTeacherPass").value = "";
-    $("newTeacherClass").value = "";
-    const verb = res.action === "assigned" ? "atandı" : "oluşturuldu";
-    const link = classShareLink(res.cls.code);
-    st.textContent = `✅ ${tName} (${res.teacher.email}) için "${res.cls.name}" ${verb}. Link: ${link}`;
-    teacherClasses = await cloudListMyClasses(true);
-    renderTeacherClasses();
-  } catch (e) {
-    st.textContent = "❌ " + e.message;
-  } finally {
-    $("createTeacherBtn").disabled = false;
-  }
-};
-$("approveAllPendingBtn").onclick = async () => {
-  if (!pendingItems.length) return;
-  setAdminState("Tüm öneriler ortak havuza ekleniyor...");
-  try {
-    for (const p of pendingItems) await cloudApproveToGlobal(p);
-    cloudGlobal = await cloudLoadGlobalWords();
-    await loadAdminQueue();
-    const selCls = getSelectedTeacherClass();
-    if (selCls) await loadTeacherClassWords(selCls.id);
-    setAdminState("✅ Tüm bekleyen öğeler ortak havuza eklendi!");
-  } catch (e) {
-    setAdminState("❌ Hata: " + e.message);
   }
 };
 
@@ -2036,7 +1909,7 @@ async function refreshTeacherSession() {
     teacherClasses = [];
     $("teacherLoginForm").hidden = false;
     $("teacherArea").hidden = true;
-    $("adminArea").hidden = true;
+    $("adminPageLink").hidden = true;
     return;
   }
   try {
@@ -2048,13 +1921,12 @@ async function refreshTeacherSession() {
     $("teacherInfo").textContent = `${isAdmin ? "👑 Yönetici" : "👩‍🏫 Öğretmen"} · ${labelName}`;
     teacherClasses = await cloudListMyClasses(isAdmin);
     renderTeacherClasses();
-    $("adminArea").hidden = !isAdmin;
-    if (isAdmin) await loadAdminQueue();
+    $("adminPageLink").hidden = !isAdmin;
   } catch (e) {
     sbSignOut();
     $("teacherLoginForm").hidden = false;
     $("teacherArea").hidden = true;
-    $("adminArea").hidden = true;
+    $("adminPageLink").hidden = true;
   }
 }
 

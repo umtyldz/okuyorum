@@ -153,7 +153,10 @@
       <div id="teacherArea" hidden>
         <div class="teacher-bar">
           <span id="teacherInfo" class="teacher-info"></span>
-          <button id="teacherLogoutBtn" class="small ghost" type="button">Çıkış yap</button>
+          <div class="teacher-bar-actions">
+            <a id="adminPageLink" href="admin.html" class="small admin-link-btn" hidden>👑 Yönetim Sayfası</a>
+            <button id="teacherLogoutBtn" class="small ghost" type="button">Çıkış yap</button>
+          </div>
         </div>
 
         <!-- Sınıfım & Paylaşım -->
@@ -232,37 +235,6 @@
             <button id="resetOrder" class="small ghost" type="button">Varsayılan (MEB 2024)</button>
           </div>
         </div>
-      </div>
-    </section>
-
-    <!-- Yönetici alanı (yalnızca admin hesabına görünür) -->
-    <section id="adminArea" class="parent-section" hidden>
-      <h3>👑 Yönetici Paneli</h3>
-
-      <div class="sub-box">
-        <h4>👩‍🏫 Yeni öğretmen ve sınıf ekle</h4>
-        <p>Öğretmen adı, e-posta, şifre ve sınıf (ör. 1B, 1H) girin; sınıf yoksa otomatik açılır.</p>
-        <div class="stack-inputs">
-          <input id="newTeacherName" type="text" placeholder="Öğretmen adı (ör: Ayşe Yılmaz)" autocomplete="off">
-          <input id="newTeacherEmail" type="email" placeholder="ogretmen@okul.com" autocomplete="off">
-          <input id="newTeacherPass" type="password" placeholder="Şifre (en az 6 karakter)" autocomplete="new-password">
-          <input id="newTeacherClass" type="text" placeholder="Sınıf (ör: 1B veya 1H)" autocomplete="off" style="text-transform:uppercase">
-        </div>
-        <div class="row">
-          <button id="createTeacherBtn" class="small" type="button">+ Öğretmen & sınıf oluştur</button>
-        </div>
-        <div id="createTeacherState" class="key-state" hidden></div>
-      </div>
-
-      <div class="sub-box">
-        <h4>✅ Ortak Havuz Onay Kuyruğu</h4>
-        <p>Öğretmenlerin sınıfına eklediği yeni kelime ve cümleleri inceleyip tek tıkla tüm sınıfların ortak havuzuna alabilirsiniz.</p>
-        <div class="row">
-          <button id="refreshPendingBtn" class="small" type="button">🔄 Yenile</button>
-          <button id="approveAllPendingBtn" class="small good-btn" type="button">✅ Tümünü ortak havuza al</button>
-        </div>
-        <div id="adminState" class="key-state" hidden></div>
-        <div id="pendingList" class="scan-list"></div>
       </div>
     </section>
   </details>
