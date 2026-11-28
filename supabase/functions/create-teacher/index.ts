@@ -46,7 +46,7 @@ async function verifyAdmin(authHeader: string, supabaseUrl: string, anonKey: str
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { status: 204, headers: CORS_HEADERS });
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (req.method !== "POST") return jsonResp({ error: "Yalnızca POST desteklenir." }, 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
