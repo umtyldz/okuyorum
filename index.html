@@ -26,7 +26,7 @@
     </nav>
     <div class="top-right">
       <span id="classBadge" class="pill class-pill" hidden></span>
-      <button id="lettersBtn" class="pill btn-letters" type="button">🔤 Harfler</button>
+      <span id="lettersBadge" class="pill letters-pill">🔤 6/29</span>
     </div>
   </header>
 
@@ -67,15 +67,14 @@
     </div>
   </main>
 
-  <!-- Ebeveyn bölümü (açılır panel) -->
+  <!-- 1) Ebeveyn bölümü (çarpma sorusu kilidiyle açılır) -->
   <details id="parent" class="parent">
     <summary id="parentSummary">⚙️ Ebeveyn</summary>
 
-    <section class="parent-section">
+    <!-- Yapay zekâ modu şimdilik arayüzde gizli (kodda korunuyor) -->
+    <section id="aiSection" class="parent-section" hidden>
       <h3>🤖 Yapay zekâ modu (isteğe bağlı)</h3>
-      <p>Gemini API anahtarınızı girerseniz çocuğun sesi yapay zekâ ile daha esnek değerlendirilir
-         (heceleme, yavaş okuma, hafif hatalı telaffuz kabul edilir). Anahtar yalnızca bu cihazın
-         tarayıcısında saklanır. Anahtar yoksa tarayıcının ses tanıması kullanılır.</p>
+      <p>Gemini API anahtarınızı girerseniz çocuğun sesi yapay zekâ ile daha esnek değerlendirilir.</p>
       <input id="key" type="password" placeholder="AIza..." autocomplete="off">
       <div class="row">
         <button id="saveKey" class="small" type="button">Kaydet</button>
@@ -86,9 +85,27 @@
       <div id="keyState" class="key-state" role="status" aria-live="polite"></div>
     </section>
 
+    <!-- 1. Sıra: Sınıf bağlantısı -->
     <section class="parent-section">
-      <h3>🔊 Seslendirme (Konuşma) hızı</h3>
-      <p>Dinle düğmesinin ve sesli geri bildirimlerin hızını ayarlayın.</p>
+      <h3>🏫 Sınıf bağlantısı</h3>
+      <div id="classJoinForm">
+        <p>Öğretmeninizin paylaştığı sınıf davet kodunu girin:</p>
+        <div class="row">
+          <input id="classCodeInput" type="text" placeholder="Örn: 1B" autocomplete="off" style="flex:1;min-width:140px;text-transform:uppercase">
+          <button id="joinClassBtn" class="small" type="button">Sınıfa bağlan</button>
+        </div>
+      </div>
+      <div id="classConnectedBox" class="class-card" hidden>
+        <div id="classConnectedInfo" class="class-card-title"></div>
+        <button id="leaveClassBtn" class="small ghost" type="button">Sınıftan ayrıl</button>
+      </div>
+      <div id="classJoinState" class="key-state" role="status" aria-live="polite" hidden></div>
+    </section>
+
+    <!-- 2. Sıra: Okuma hızı -->
+    <section class="parent-section">
+      <h3>🔊 Okuma hızı</h3>
+      <p>Kaydırıcıyı oynattığınızda hız otomatik seslendirilir.</p>
       <div class="rate-row">
         <input id="speechRate" type="range" min="0.5" max="1.4" step="0.05">
         <span id="speechRateLabel" class="rate-label"></span>
@@ -96,38 +113,28 @@
       </div>
     </section>
 
+    <!-- 3. Sıra: Geldiğimiz harfler (isteğe bağlı geçici seçim) -->
     <section class="parent-section">
-      <h3>🔤 Harf sırası</h3>
-      <p>Sınıfta öğrenilen harfleri sırayla yazın (boşluk/virgülle ayırabilirsiniz).</p>
-      <textarea id="order" rows="3"></textarea>
-      <div class="row">
-        <button id="saveOrder" class="small" type="button">Sırayı kaydet</button>
-        <button id="resetOrder" class="small ghost" type="button">Varsayılan (MEB 2024)</button>
-      </div>
+      <h3>🔤 Geldiğimiz harfler</h3>
+      <p>Sınıfa bağlıysanız oyun her açılışta öğretmenin belirlediği harflerle başlar. Bu oturumda farklı harf çalışmak için seçebilirsiniz.</p>
+      <button id="openLettersBtn" class="small" type="button">🔤 Geldiğimiz harfleri seç</button>
     </section>
 
+    <!-- 4. Sıra: İlerleme sıfırlama -->
     <section class="parent-section">
       <h3>🧹 İlerleme</h3>
       <button id="resetAll" class="small danger" type="button">Puan ve ilerlemeyi sıfırla</button>
     </section>
+  </details>
 
-    <!-- Sınıf bağlantısı (Veli / Öğrenci) -->
-    <section class="parent-section">
-      <h3>🏫 Sınıf bağlantısı (isteğe bağlı)</h3>
-      <p>Öğretmeninizin paylaştığı sınıf kodunu girerseniz sınıfınızın ödevleri ve kelimeleri otomatik yüklenir.</p>
-      <div class="row">
-        <input id="classCodeInput" type="text" placeholder="Örn: 1B-4821" autocomplete="off" style="flex:1;min-width:140px;text-transform:uppercase">
-        <button id="joinClassBtn" class="small" type="button">Sınıfa bağlan</button>
-        <button id="leaveClassBtn" class="small ghost" type="button" hidden>Sınıftan çık</button>
-      </div>
-      <div id="classJoinState" class="key-state" role="status" aria-live="polite"></div>
-    </section>
+  <!-- 2) Öğretmen bölümü (kendi girişiyle açılır) -->
+  <details id="teacherPanel" class="parent teacher-panel">
+    <summary id="teacherSummary">👩‍🏫 Öğretmen</summary>
 
-    <!-- Öğretmen / Yönetici Paneli -->
     <section class="parent-section">
-      <h3>👩‍🏫 Öğretmen / Yönetici Paneli</h3>
       <div id="teacherLoginForm">
-        <p>Kendi sınıfınıza sayfa tarayıp anlık ödev/kelime yayınlamak için öğretmen hesabınızla giriş yapın.</p>
+        <h3>👩‍🏫 Öğretmen Girişi</h3>
+        <p>Sınıfınıza harf seviyesi belirlemek ve sayfa tarayıp ödev yayınlamak için giriş yapın.</p>
         <div class="stack-inputs">
           <input id="teacherEmail" type="email" placeholder="ogretmen@okul.com" autocomplete="username">
           <input id="teacherPass" type="password" placeholder="Şifre" autocomplete="current-password">
@@ -144,30 +151,46 @@
           <button id="teacherLogoutBtn" class="small ghost" type="button">Çıkış yap</button>
         </div>
 
-        <!-- Sınıf seçimi / oluşturma -->
+        <!-- Sınıfım & Paylaşım -->
         <div class="sub-box">
-          <label class="field-label" for="teacherClassSelect">Sınıfınız</label>
-          <select id="teacherClassSelect" class="select-box"></select>
-          <div class="row">
-            <input id="newClassName" type="text" placeholder="Yeni sınıf adı (ör: 1-B)" style="flex:1;min-width:150px">
+          <div id="teacherClassHeading" class="teacher-class-title">🏫 Sınıfım</div>
+          <div id="teacherClassSelectWrap" hidden>
+            <label class="field-label" for="teacherClassSelect">Sınıf seçin</label>
+            <select id="teacherClassSelect" class="select-box"></select>
+          </div>
+          <div id="teacherCreateClassRow" class="row" hidden>
+            <input id="newClassName" type="text" placeholder="Yeni sınıf adı (ör: 1B)" style="flex:1;min-width:150px">
             <button id="createClassBtn" class="small" type="button">+ Sınıf oluştur</button>
           </div>
           <div id="classShareRow" class="share-box" hidden>
+            <label class="field-label" for="classShareUrl">Veli davet linki</label>
             <div class="share-line">
               <input id="classShareUrl" type="text" readonly>
-              <button id="copyClassLinkBtn" class="small" type="button">📋 Linki kopyala</button>
             </div>
             <div class="row">
+              <button id="whatsappShareBtn" class="small wa-btn" type="button">💬 WhatsApp'ta Paylaş</button>
+              <button id="copyClassLinkBtn" class="small" type="button">📋 Linki Kopyala</button>
               <button id="previewClassBtn" class="small ghost" type="button">👁️ Bu sınıfa geç</button>
-              <button id="syncLettersBtn" class="small ghost" type="button">🔤 Seçili harfleri sınıfa kaydet</button>
             </div>
           </div>
+        </div>
+
+        <!-- Geldiğimiz harfler (Öğretmen) -->
+        <div id="teacherLettersBox" class="sub-box" hidden>
+          <h4>🔤 Geldiğimiz Harfler</h4>
+          <p>Öğrendiğiniz son harfe dokunup kaydedin. Öğrencilerin oyunu her açılışta bu harflerle başlar.</p>
+          <div id="teacherLetterGrid" class="letter-grid"></div>
+          <div id="teacherLetterInfo" class="picker-info"></div>
+          <div class="row">
+            <button id="saveClassLettersBtn" class="small good-btn" type="button">💾 Geldiğimiz harfleri kaydet</button>
+          </div>
+          <div id="teacherLetterState" class="key-state" hidden></div>
         </div>
 
         <!-- Kameradan sayfa tarama -->
         <div class="sub-box">
           <h4>📷 Kameradan sayfa tara ve yayınla</h4>
-          <p>Fotoğraf yalnızca metni okumak için kullanılır, hiçbir yere kaydedilmez. Öğretmen girişiyle doğrudan çalışır.</p>
+          <p>Fotoğraf yalnızca metni okumak için kullanılır, hiçbir yere kaydedilmez.</p>
           <input id="pageCameraInput" type="file" accept="image/*" capture="environment" hidden>
           <input id="pageGalleryInput" type="file" accept="image/*" hidden>
           <div class="row">
@@ -196,17 +219,29 @@
           <h4>📚 Sınıftaki bulut kelimeleri</h4>
           <div id="classWordsList" class="class-words-list"></div>
         </div>
+
+        <!-- Harf sırası (Ebeveynden taşındı) -->
+        <div class="sub-box">
+          <h4>🧩 Harf sırası</h4>
+          <p>Sınıfınızda farklı bir ses/harf sırası kullanıyorsanız düzenleyip kaydedin.</p>
+          <textarea id="order" rows="3"></textarea>
+          <div class="row">
+            <button id="saveOrder" class="small" type="button">Sırayı kaydet</button>
+            <button id="resetOrder" class="small ghost" type="button">Varsayılan (MEB 2024)</button>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- Yönetici alanı -->
+    <!-- Yönetici alanı (yalnızca admin hesabına görünür) -->
     <section id="adminArea" class="parent-section" hidden>
       <h3>👑 Yönetici Paneli</h3>
 
       <div class="sub-box">
         <h4>👩‍🏫 Yeni öğretmen ve sınıf ekle</h4>
-        <p>Öğretmen hesabı ve sınıfı (ör. 1B, 1H) tek seferde açılır; sınıf zaten varsa yeni öğretmene atanır.</p>
+        <p>Öğretmen adı, e-posta, şifre ve sınıf (ör. 1B, 1H) girin; sınıf yoksa otomatik açılır.</p>
         <div class="stack-inputs">
+          <input id="newTeacherName" type="text" placeholder="Öğretmen adı (ör: Ayşe Yılmaz)" autocomplete="off">
           <input id="newTeacherEmail" type="email" placeholder="ogretmen@okul.com" autocomplete="off">
           <input id="newTeacherPass" type="password" placeholder="Şifre (en az 6 karakter)" autocomplete="new-password">
           <input id="newTeacherClass" type="text" placeholder="Sınıf (ör: 1B veya 1H)" autocomplete="off" style="text-transform:uppercase">

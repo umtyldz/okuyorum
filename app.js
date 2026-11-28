@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v24";
+const APP_VERSION = "v25";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -32,7 +32,8 @@ const LS = {
   model: "okuyorum.geminiModel",
   order: "okuyorum.letterOrder",
   speechRate: "okuyorum.speechRate",
-  classCode: "okuyorum.classCode"
+  classCode: "okuyorum.classCode",
+  lastClassCode: "okuyorum.lastClassCode"
 };
 const $ = (id) => document.getElementById(id);
 
@@ -436,9 +437,7 @@ function renderStars() {
 function renderHeader(completedRound = false) {
   renderStars();
   $("score").textContent = "⭐ " + state.score;
-  $("lettersBtn").textContent = state.letterCount
-    ? `🔤 Harfler (${state.letterCount}/${order.length})`
-    : "🔤 Harfler";
+  $("lettersBadge").textContent = `🔤 ${state.letterCount || 6}/${order.length}`;
   document.querySelectorAll(".lvl").forEach((b) =>
     b.classList.toggle("active", Number(b.dataset.level) === state.level));
 
@@ -1054,36 +1053,34 @@ function tick() {
   anim = parts.length ? requestAnimationFrame(tick) : null;
 }
 
-// --- Harf seçici (5 MEB grubu veya özel düz ızgara) ---
-let pendingCount = state.letterCount;
+// --- Harf seçici (ortak 5 MEB grubu veya özel düz ızgara) ---
+let pendingCount = state.letterCount || 6;
 
 function openPicker() {
-  pendingCount = state.letterCount || 0;
-  $("pickerClose").hidden = state.letterCount <= 0;
+  pendingCount = state.letterCount || (cloudClass && cloudClass.letter_count) || 6;
+  $("pickerClose").hidden = false;
   renderPicker();
   $("picker").hidden = false;
 }
 
 function closePicker() {
-  if (state.letterCount <= 0) return;
   $("picker").hidden = true;
 }
 
-function createLetterBtn(l, idx) {
+function createLetterBtn(l, idx, activeCount, markIdx, onPick) {
   const b = document.createElement("button");
   b.type = "button";
-  b.className = "letter" + (idx < pendingCount ? " on" : "") + (idx === pendingCount - 1 ? " last" : "");
+  b.className = "letter" +
+    (idx < activeCount ? " on" : "") +
+    (idx === activeCount - 1 ? " last" : "") +
+    (idx === markIdx ? " teacher-mark" : "");
+  if (idx === markIdx) b.title = "Öğretmenin seçtiği harf";
   b.textContent = l;
-  b.onclick = () => {
-    pendingCount = idx + 1;
-    renderPicker();
-    speak(l.toLocaleLowerCase("tr-TR"), Math.max(0.5, getSpeechRate() * 0.85));
-  };
+  b.onclick = () => onPick(idx + 1, l);
   return b;
 }
 
-function renderPicker() {
-  const grid = $("letterGrid");
+function renderLetterGridInto(grid, activeCount, markIdx, onPick) {
   grid.innerHTML = "";
   if (isDefaultOrder()) {
     grid.className = "letter-grid";
@@ -1096,20 +1093,32 @@ function renderPicker() {
       lbl.textContent = grp.name;
       const row = document.createElement("div");
       row.className = "group-letters";
-      for (const l of grp.letters) row.appendChild(createLetterBtn(l, idx++));
+      for (const l of grp.letters) row.appendChild(createLetterBtn(l, idx++, activeCount, markIdx, onPick));
       box.appendChild(lbl);
       box.appendChild(row);
       grid.appendChild(box);
     }
   } else {
     grid.className = "letter-grid flat";
-    order.forEach((l, i) => grid.appendChild(createLetterBtn(l, i)));
+    order.forEach((l, i) => grid.appendChild(createLetterBtn(l, i, activeCount, markIdx, onPick)));
   }
+}
+
+function renderPicker() {
+  const markIdx = cloudClass && cloudClass.letter_count > 0
+    ? Math.min(cloudClass.letter_count, order.length) - 1
+    : -1;
+  renderLetterGridInto($("letterGrid"), pendingCount, markIdx, (count, l) => {
+    pendingCount = count;
+    renderPicker();
+    speak(l.toLocaleLowerCase("tr-TR"), Math.max(0.5, getSpeechRate() * 0.85));
+  });
 
   if (pendingCount) {
     const wCount = buildPool(2, pendingCount).length;
     const sCount = buildPool(3, pendingCount).length;
-    $("pickerInfo").textContent = `${pendingCount} harf seçili · ${wCount} kelime · ${sCount} cümle`;
+    $("pickerInfo").textContent = `${pendingCount} harf seçili · ${wCount} kelime · ${sCount} cümle` +
+      (markIdx >= 0 ? ` (👩‍🏫: ${order[markIdx]})` : "");
   } else {
     $("pickerInfo").textContent = "Öğrendiğin son harfe dokun 👆";
   }
@@ -1124,7 +1133,7 @@ $("startBtn").onclick = () => {
   $("picker").hidden = true;
   newSession();
 };
-$("lettersBtn").onclick = openPicker;
+$("openLettersBtn").onclick = openPicker;
 $("pickerClose").onclick = closePicker;
 $("picker").onclick = (e) => { if (e.target === $("picker")) closePicker(); };
 
@@ -1261,6 +1270,7 @@ $("testKey").onclick = async () => {
   }
 };
 
+let rateSpeakTimer = null;
 function renderSpeechRate() {
   const r = getSpeechRate();
   $("speechRate").value = r;
@@ -1270,44 +1280,90 @@ renderSpeechRate();
 $("speechRate").oninput = (e) => {
   lsSet(LS.speechRate, e.target.value);
   renderSpeechRate();
+  clearTimeout(rateSpeakTimer);
+  rateSpeakTimer = setTimeout(() => {
+    speak("Harika okudun! Şimdi yeni kelimeye geçelim.", getSpeechRate());
+  }, 250);
 };
 $("testSpeech").onclick = () => speak("Harika okudun! Şimdi yeni kelimeye geçelim.", getSpeechRate());
 
 $("order").value = order.join(" ");
-$("saveOrder").onclick = () => {
+$("saveOrder").onclick = async () => {
   const arr = parseOrder($("order").value);
   if (!arr.length) return;
   lsSet(LS.order, arr.join(" "));
   order = arr;
-  state.letterCount = Math.min(state.letterCount, order.length);
+  state.letterCount = Math.min(state.letterCount || 6, order.length);
   saveState();
   $("order").value = order.join(" ");
   renderHeader();
-  openPicker();
+  renderTeacherLetters();
+  const cls = getSelectedTeacherClass();
+  if (cls) {
+    try {
+      await cloudUpdateClassSettings(cls.id, { letter_order: order.join(" ") });
+      cls.letter_order = order.join(" ");
+    } catch (e) {}
+  }
 };
-$("resetOrder").onclick = () => {
+$("resetOrder").onclick = async () => {
   lsDel(LS.order);
   order = LETTER_ORDER.slice();
   $("order").value = order.join(" ");
-  state.letterCount = Math.min(state.letterCount, order.length);
+  state.letterCount = Math.min(state.letterCount || 6, order.length);
   saveState();
   renderHeader();
+  renderTeacherLetters();
+  const cls = getSelectedTeacherClass();
+  if (cls) {
+    try {
+      await cloudUpdateClassSettings(cls.id, { letter_order: null });
+      cls.letter_order = null;
+    } catch (e) {}
+  }
 };
 $("resetAll").onclick = () => {
   if (!confirm("Puan ve ilerleme silinsin mi?")) return;
-  state = { score: 0, letterCount: 0, level: 1, correct: { 1: 0, 2: 0, 3: 0, 4: 0 } };
+  const fallbackCount = (cloudClass && cloudClass.letter_count > 0)
+    ? Math.min(cloudClass.letter_count, order.length)
+    : Math.min(6, order.length);
+  state = { score: 0, letterCount: fallbackCount, level: 1, correct: { 1: 0, 2: 0, 3: 0, 4: 0 } };
   saveState();
   renderHeader();
-  openPicker();
+  newSession();
 };
 
 /* ---------- 8) BULUT (SUPABASE), SAYFA TARAMA, ÖĞRETMEN & YÖNETİCİ ---------- */
 
 let teacherProfile = null;
 let teacherClasses = [];
+let teacherPendingCount = 6;
 let scanItems = [];
 let pendingItems = [];
 let lastCloudSyncAt = 0;
+
+function applyClassLetters(cls) {
+  if (!cls) return false;
+  let changed = false;
+  if (cls.letter_order) {
+    const arr = parseOrder(cls.letter_order);
+    if (arr.length && arr.join(" ") !== order.join(" ")) {
+      order = arr;
+      lsSet(LS.order, order.join(" "));
+      $("order").value = order.join(" ");
+      changed = true;
+    }
+  }
+  if (cls.letter_count > 0) {
+    const nextCount = Math.min(cls.letter_count, order.length);
+    if (state.letterCount !== nextCount) {
+      state.letterCount = nextCount;
+      saveState();
+      changed = true;
+    }
+  }
+  return changed;
+}
 
 function renderCloudBadges() {
   const hwCount = cloudClassWords.filter((w) => w.is_homework).length;
@@ -1320,41 +1376,48 @@ function renderCloudBadges() {
   if (cloudClass) {
     badge.textContent = `🏫 ${cloudClass.name}`;
     badge.hidden = false;
-    $("leaveClassBtn").hidden = false;
-    $("classCodeInput").value = cloudClass.code;
-    $("classJoinState").textContent = `✅ Bağlı sınıf: ${cloudClass.name} (${cloudClass.code})` +
-      (hwCount ? ` · ${hwCount} ödev` : "");
+    $("classJoinForm").hidden = true;
+    $("classConnectedBox").hidden = false;
+    const tName = cloudClass.teacher_name ? ` — ${cloudClass.teacher_name}` : "";
+    $("classConnectedInfo").textContent = `🏫 ${cloudClass.name}${tName}` + (hwCount ? ` · ${hwCount} ödev` : "");
+    $("classJoinState").hidden = true;
   } else {
     badge.hidden = true;
-    $("leaveClassBtn").hidden = true;
-    $("classJoinState").textContent = "Henüz bir sınıfa bağlı değilsiniz (ortak havuz açık).";
+    $("classJoinForm").hidden = false;
+    $("classConnectedBox").hidden = true;
+    if (!$("classCodeInput").value) {
+      $("classCodeInput").value = lsGet(LS.lastClassCode) || "";
+    }
   }
   renderHeader();
+}
+
+function setJoinState(msg, show = true) {
+  const el = $("classJoinState");
+  el.textContent = msg;
+  el.hidden = !show;
 }
 
 async function connectClassByCode(code, opts = {}) {
   const cleanCode = String(code || "").trim().toUpperCase();
   if (!cleanCode) return false;
-  if (!opts.quiet) $("classJoinState").textContent = "Sınıf aranıyor...";
+  if (!opts.quiet) setJoinState("Sınıf aranıyor...");
   try {
     const cls = await cloudFindClassByCode(cleanCode);
     if (!cls) {
-      if (!opts.quiet) $("classJoinState").textContent = "❌ Bu kodla sınıf bulunamadı.";
+      if (!opts.quiet) setJoinState("❌ Bu kodla sınıf bulunamadı.");
       return false;
     }
     cloudClass = cls;
     lsSet(LS.classCode, cls.code);
+    lsSet(LS.lastClassCode, cls.code);
     cloudClassWords = await cloudLoadClassWords(cls.id);
-    if (opts.applyLetters && state.letterCount === 0 && cls.letter_count > 0) {
-      state.letterCount = Math.min(cls.letter_count, order.length);
-      saveState();
-      $("picker").hidden = true;
-    }
+    const lettersChanged = opts.applyLetters ? applyClassLetters(cls) : false;
     renderCloudBadges();
-    if (opts.applyLetters && state.letterCount > 0 && !shownList.length) newSession();
+    if (lettersChanged && shownList.length) newSession();
     return true;
   } catch (e) {
-    if (!opts.quiet) $("classJoinState").textContent = "❌ Bağlantı hatası: " + e.message;
+    if (!opts.quiet) setJoinState("❌ Bağlantı hatası: " + e.message);
     return false;
   }
 }
@@ -1370,13 +1433,16 @@ $("joinClassBtn").onclick = async () => {
 };
 
 $("leaveClassBtn").onclick = () => {
+  const remembered = (cloudClass && cloudClass.code) || lsGet(LS.classCode) || "";
+  if (remembered) lsSet(LS.lastClassCode, remembered);
   lsDel(LS.classCode);
   cloudClearClassCache();
   cloudClass = null;
   cloudClassWords = [];
   if (state.level === 4) state.level = 2;
   saveState();
-  $("classCodeInput").value = "";
+  $("classCodeInput").value = remembered;
+  setJoinState("", false);
   renderCloudBadges();
   newSession();
 };
@@ -1570,16 +1636,37 @@ function classShareLink(code) {
   return location.origin + location.pathname + "?sinif=" + encodeURIComponent(code);
 }
 
+function renderTeacherLetters() {
+  const cls = getSelectedTeacherClass();
+  const box = $("teacherLettersBox");
+  if (!cls) { box.hidden = true; return; }
+  box.hidden = false;
+  renderLetterGridInto($("teacherLetterGrid"), teacherPendingCount, -1, (count, l) => {
+    teacherPendingCount = count;
+    renderTeacherLetters();
+    speak(l.toLocaleLowerCase("tr-TR"), Math.max(0.5, getSpeechRate() * 0.85));
+  });
+  const wCount = buildPool(2, teacherPendingCount).length;
+  const sCount = buildPool(3, teacherPendingCount).length;
+  $("teacherLetterInfo").textContent =
+    `Seçilen: ${order.slice(0, teacherPendingCount).join(" ")} (${teacherPendingCount}/${order.length} harf · ${wCount} kelime · ${sCount} cümle)`;
+}
+
 function renderTeacherClasses() {
   const sel = $("teacherClassSelect");
   const prevId = sel.value;
+  const isAdmin = teacherProfile && teacherProfile.role === "admin";
   sel.innerHTML = "";
   if (!teacherClasses.length) {
     const opt = document.createElement("option");
     opt.value = "";
-    opt.textContent = "Henüz sınıf yok — aşağıdan oluşturun";
+    opt.textContent = "Henüz sınıf yok";
     sel.appendChild(opt);
+    $("teacherClassHeading").textContent = "🏫 Henüz sınıfınız yok";
+    $("teacherClassSelectWrap").hidden = true;
+    $("teacherCreateClassRow").hidden = false;
     $("classShareRow").hidden = true;
+    $("teacherLettersBox").hidden = true;
     $("classWordsBox").hidden = true;
     return;
   }
@@ -1591,6 +1678,9 @@ function renderTeacherClasses() {
   }
   if (prevId && teacherClasses.some((c) => c.id === prevId)) sel.value = prevId;
   else if (cloudClass && teacherClasses.some((c) => c.id === cloudClass.id)) sel.value = cloudClass.id;
+
+  $("teacherClassSelectWrap").hidden = !isAdmin && teacherClasses.length <= 1;
+  $("teacherCreateClassRow").hidden = !isAdmin;
   updateSelectedClassBox();
 }
 
@@ -1598,11 +1688,17 @@ async function updateSelectedClassBox() {
   const cls = getSelectedTeacherClass();
   if (!cls) {
     $("classShareRow").hidden = true;
+    $("teacherLettersBox").hidden = true;
     $("classWordsBox").hidden = true;
     return;
   }
+  $("teacherClassHeading").textContent = `🏫 Sınıfım: ${cls.name}` +
+    (cls.teacher_name ? ` — ${cls.teacher_name}` : "");
   $("classShareRow").hidden = false;
   $("classShareUrl").value = classShareLink(cls.code);
+  teacherPendingCount = Math.min(Math.max(1, cls.letter_count || 6), order.length);
+  $("teacherLetterState").hidden = true;
+  renderTeacherLetters();
   await loadTeacherClassWords(cls.id);
 }
 
@@ -1677,21 +1773,29 @@ async function loadTeacherClassWords(classId) {
 $("teacherClassSelect").onchange = updateSelectedClassBox;
 
 $("createClassBtn").onclick = async () => {
-  const name = $("newClassName").value.trim();
+  const name = $("newClassName").value.trim().toLocaleUpperCase("tr-TR");
   if (!name) return;
-  const slug = name.toLocaleUpperCase("tr-TR").replace(/[^A-Z0-9]/g, "").slice(0, 4) || "SINIF";
-  const code = `${slug}-${1000 + Math.floor(Math.random() * 9000)}`;
+  const code = name.replace(/[^A-ZÇĞİÖŞÜ0-9]/g, "") || `S${100 + Math.floor(Math.random() * 900)}`;
+  const tName = (teacherProfile && teacherProfile.full_name) || "";
   try {
-    const created = await cloudCreateClass(name, code, state.letterCount || 6);
+    const created = await cloudCreateClass(name, code, state.letterCount || 6, tName);
     $("newClassName").value = "";
     teacherClasses.unshift(created);
     renderTeacherClasses();
     $("teacherClassSelect").value = created.id;
     await updateSelectedClassBox();
-    await connectClassByCode(created.code, { quiet: true });
+    await connectClassByCode(created.code, { quiet: true, applyLetters: true });
   } catch (e) {
     alert("Sınıf oluşturulamadı: " + e.message);
   }
+};
+
+$("whatsappShareBtn").onclick = () => {
+  const cls = getSelectedTeacherClass();
+  if (!cls) return;
+  const link = classShareLink(cls.code);
+  const text = `Merhaba, Okuyorum ${cls.name} sınıfı linkimiz:\n${link}\n(Sınıf kodu: ${cls.code})`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
 };
 
 $("copyClassLinkBtn").onclick = async () => {
@@ -1699,7 +1803,7 @@ $("copyClassLinkBtn").onclick = async () => {
   try {
     await navigator.clipboard.writeText(url);
     $("copyClassLinkBtn").textContent = "✅ Kopyalandı";
-    setTimeout(() => { $("copyClassLinkBtn").textContent = "📋 Linki kopyala"; }, 1800);
+    setTimeout(() => { $("copyClassLinkBtn").textContent = "📋 Linki Kopyala"; }, 1800);
   } catch (e) {
     $("classShareUrl").select();
     document.execCommand("copy");
@@ -1716,16 +1820,24 @@ $("previewClassBtn").onclick = async () => {
   newSession();
 };
 
-$("syncLettersBtn").onclick = async () => {
+$("saveClassLettersBtn").onclick = async () => {
   const cls = getSelectedTeacherClass();
   if (!cls) return;
+  const st = $("teacherLetterState");
+  st.textContent = "Kaydediliyor...";
+  st.hidden = false;
   try {
-    await cloudUpdateClassLetterCount(cls.id, state.letterCount || 6);
-    cls.letter_count = state.letterCount || 6;
-    if (cloudClass && cloudClass.id === cls.id) cloudClass.letter_count = cls.letter_count;
-    alert(`✅ "${cls.name}" sınıfının harf ilerlemesi (${cls.letter_count} harf) kaydedildi.`);
+    await cloudUpdateClassSettings(cls.id, { letter_count: teacherPendingCount });
+    cls.letter_count = teacherPendingCount;
+    if (cloudClass && cloudClass.id === cls.id) {
+      cloudClass.letter_count = teacherPendingCount;
+      applyClassLetters(cloudClass);
+      renderHeader();
+      newSession();
+    }
+    st.textContent = `✅ "${cls.name}" sınıfı ${teacherPendingCount}. harfe (${order[teacherPendingCount - 1]}) güncellendi.`;
   } catch (e) {
-    alert("Kaydedilemedi: " + e.message);
+    st.textContent = "❌ Kaydedilemedi: " + e.message;
   }
 };
 
@@ -1846,12 +1958,13 @@ async function loadAdminQueue() {
 $("refreshPendingBtn").onclick = loadAdminQueue;
 
 $("createTeacherBtn").onclick = async () => {
+  const tName = $("newTeacherName").value.trim();
   const email = $("newTeacherEmail").value.trim();
   const pass = $("newTeacherPass").value;
   const clsName = $("newTeacherClass").value.trim();
   const st = $("createTeacherState");
-  if (!email || !pass || !clsName) {
-    st.textContent = "E-posta, şifre ve sınıf adını yazın.";
+  if (!tName || !email || !pass || !clsName) {
+    st.textContent = "Öğretmen adı, e-posta, şifre ve sınıfı yazın.";
     st.hidden = false;
     return;
   }
@@ -1859,13 +1972,14 @@ $("createTeacherBtn").onclick = async () => {
   st.hidden = false;
   $("createTeacherBtn").disabled = true;
   try {
-    const res = await cloudCreateTeacher(email, pass, clsName);
+    const res = await cloudCreateTeacher(tName, email, pass, clsName);
+    $("newTeacherName").value = "";
     $("newTeacherEmail").value = "";
     $("newTeacherPass").value = "";
     $("newTeacherClass").value = "";
     const verb = res.action === "assigned" ? "atandı" : "oluşturuldu";
     const link = classShareLink(res.cls.code);
-    st.textContent = `✅ ${res.teacher.email} için "${res.cls.name}" (kod: ${res.cls.code}) ${verb}. Link: ${link}`;
+    st.textContent = `✅ ${tName} (${res.teacher.email}) için "${res.cls.name}" ${verb}. Link: ${link}`;
     teacherClasses = await cloudListMyClasses(true);
     renderTeacherClasses();
   } catch (e) {
@@ -1903,7 +2017,8 @@ async function refreshTeacherSession() {
     const isAdmin = teacherProfile && teacherProfile.role === "admin";
     $("teacherLoginForm").hidden = true;
     $("teacherArea").hidden = false;
-    $("teacherInfo").textContent = `${isAdmin ? "👑 Yönetici" : "👩‍🏫 Öğretmen"} · ${session.user.email}`;
+    const labelName = (teacherProfile && teacherProfile.full_name) || session.user.email;
+    $("teacherInfo").textContent = `${isAdmin ? "👑 Yönetici" : "👩‍🏫 Öğretmen"} · ${labelName}`;
     teacherClasses = await cloudListMyClasses(isAdmin);
     renderTeacherClasses();
     $("adminArea").hidden = !isAdmin;
@@ -1951,7 +2066,8 @@ async function initCloud() {
   cloudGlobal = await cloudLoadGlobalWords();
   const savedCode = lsGet(LS.classCode);
   if (savedCode) {
-    await connectClassByCode(savedCode, { quiet: true, applyLetters: !!urlCode });
+    // Sınıfa bağlıysa her açılışta öğretmenin belirlediği harflerden başla
+    await connectClassByCode(savedCode, { quiet: true, applyLetters: true });
   } else {
     renderCloudBadges();
   }
@@ -1966,7 +2082,7 @@ document.addEventListener("visibilitychange", async () => {
   cloudGlobal = await cloudLoadGlobalWords();
   if (cloudClass) {
     cloudClassWords = await cloudLoadClassWords(cloudClass.id);
-    renderCloudBadges();
+    await connectClassByCode(cloudClass.code, { quiet: true, applyLetters: true });
   }
 });
 
@@ -1975,11 +2091,14 @@ if ("serviceWorker" in navigator) {
   addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}));
 }
 
-// --- Başlangıç ---
+// --- Başlangıç (ilk açılışta harf seçici çıkmaz, doğrudan başlar) ---
+if (state.letterCount <= 0 || state.letterCount > order.length) {
+  state.letterCount = Math.min(6, order.length);
+  saveState();
+}
 renderStatusBar();
 renderHeader();
 renderKeyState();
 renderCloudBadges();
-if (state.letterCount > 0 && state.letterCount <= order.length) newSession();
-else openPicker();
+newSession();
 initCloud();

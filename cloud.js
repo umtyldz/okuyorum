@@ -177,7 +177,7 @@ async function cloudFindClassByCode(code) {
   if (!cleanCode) return null;
   try {
     const rows = await sbFetch(
-      `/rest/v1/classes?code=eq.${encodeURIComponent(cleanCode)}&select=id,code,name,letter_count,teacher_id`,
+      `/rest/v1/classes?code=eq.${encodeURIComponent(cleanCode)}&select=*`,
       { auth: false }
     );
     const cls = (rows && rows[0]) || null;
@@ -217,36 +217,69 @@ async function cloudListMyClasses(isAdmin) {
   if (!s) throw new Error("Giriş gerekli.");
   const filter = isAdmin ? "" : `teacher_id=eq.${encodeURIComponent(s.user.id)}&`;
   const rows = await sbFetch(
-    `/rest/v1/classes?${filter}select=id,code,name,letter_count,teacher_id,created_at&order=created_at.desc`,
+    `/rest/v1/classes?${filter}select=*&order=created_at.desc`,
     { requireAuth: true }
   );
   return Array.isArray(rows) ? rows : [];
 }
 
-async function cloudCreateClass(name, code, letterCount) {
+async function cloudCreateClass(name, code, letterCount, teacherName = "") {
   const s = await sbEnsureValidSession();
   if (!s) throw new Error("Giriş gerekli.");
-  const rows = await sbFetch("/rest/v1/classes", {
-    method: "POST",
-    requireAuth: true,
-    headers: { "Prefer": "return=representation" },
-    body: {
-      name: String(name || "").trim(),
-      code: String(code || "").trim().toUpperCase(),
-      teacher_id: s.user.id,
-      letter_count: Math.max(0, Math.min(29, Number(letterCount) || 6))
+  const payload = {
+    name: String(name || "").trim(),
+    code: String(code || "").trim().toUpperCase(),
+    teacher_id: s.user.id,
+    letter_count: Math.max(0, Math.min(29, Number(letterCount) || 6))
+  };
+  if (teacherName) payload.teacher_name = String(teacherName).trim();
+  try {
+    const rows = await sbFetch("/rest/v1/classes", {
+      method: "POST",
+      requireAuth: true,
+      headers: { "Prefer": "return=representation" },
+      body: payload
+    });
+    return rows && rows[0];
+  } catch (e) {
+    if (payload.teacher_name && /teacher_name/i.test(e.message)) {
+      delete payload.teacher_name;
+      const rows = await sbFetch("/rest/v1/classes", {
+        method: "POST",
+        requireAuth: true,
+        headers: { "Prefer": "return=representation" },
+        body: payload
+      });
+      return rows && rows[0];
     }
-  });
-  return rows && rows[0];
+    throw e;
+  }
 }
 
-async function cloudUpdateClassLetterCount(classId, letterCount) {
-  return sbFetch(`/rest/v1/classes?id=eq.${encodeURIComponent(classId)}`, {
-    method: "PATCH",
-    requireAuth: true,
-    headers: { "Prefer": "return=representation" },
-    body: { letter_count: Math.max(0, Math.min(29, Number(letterCount) || 6)) }
-  });
+async function cloudUpdateClassSettings(classId, fields) {
+  const body = Object.assign({}, fields);
+  if (body.letter_count !== undefined) {
+    body.letter_count = Math.max(0, Math.min(29, Number(body.letter_count) || 6));
+  }
+  try {
+    return await sbFetch(`/rest/v1/classes?id=eq.${encodeURIComponent(classId)}`, {
+      method: "PATCH",
+      requireAuth: true,
+      headers: { "Prefer": "return=representation" },
+      body
+    });
+  } catch (e) {
+    // Ek sütunlar henüz yoksa yalnızca letter_count güncellemeyi dene
+    if (/letter_order|teacher_name/i.test(e.message) && body.letter_count !== undefined) {
+      return sbFetch(`/rest/v1/classes?id=eq.${encodeURIComponent(classId)}`, {
+        method: "PATCH",
+        requireAuth: true,
+        headers: { "Prefer": "return=representation" },
+        body: { letter_count: body.letter_count }
+      });
+    }
+    throw e;
+  }
 }
 
 async function cloudDeleteClass(classId) {
@@ -362,11 +395,11 @@ async function cloudScanPage(imageBase64) {
   });
 }
 
-async function cloudCreateTeacher(email, password, className) {
+async function cloudCreateTeacher(teacherName, email, password, className) {
   return sbFetch("/functions/v1/create-teacher", {
     method: "POST",
     requireAuth: true,
     timeoutMs: 20000,
-    body: { email, password, className }
+    body: { teacherName, email, password, className }
   });
 }

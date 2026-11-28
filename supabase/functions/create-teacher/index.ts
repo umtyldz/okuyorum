@@ -1,7 +1,7 @@
 // Supabase Edge Function: create-teacher
 // Yalnızca Admin kullanıcılar tarafından çağrılabilir.
-// Öğretmen hesabını otomatik onaylı oluşturur ve belirtilen sınıfı (ör. 1B, 1H)
-// yoksa oluşturur, varsa o sınıfı yeni öğretmene atar.
+// Öğretmen hesabını (ad + e-posta + şifre) otomatik onaylı oluşturur ve belirtilen sınıfı
+// (ör. 1B, 1H) yoksa oluşturur, varsa o sınıfı yeni öğretmene atar.
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -46,7 +46,7 @@ async function verifyAdmin(authHeader: string, supabaseUrl: string, anonKey: str
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: CORS_HEADERS });
   if (req.method !== "POST") return jsonResp({ error: "Yalnızca POST desteklenir." }, 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
@@ -63,18 +63,20 @@ Deno.serve(async (req) => {
   const check = await verifyAdmin(authHeader, supabaseUrl, anonKey, serviceKey);
   if (!check.ok) return jsonResp({ error: check.msg }, check.status);
 
-  let body: { email?: string; password?: string; className?: string };
+  let body: { teacherName?: string; email?: string; password?: string; className?: string };
   try {
     body = await req.json();
   } catch (_) {
     return jsonResp({ error: "Geçersiz JSON gövdesi." }, 400);
   }
 
+  const teacherName = String(body.teacherName || "").trim();
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
   const className = String(body.className || "").trim().toLocaleUpperCase("tr-TR");
   const code = normalizeClassCode(className);
 
+  if (!teacherName) return jsonResp({ error: "Öğretmen adını girin." }, 400);
   if (!email || !email.includes("@")) return jsonResp({ error: "Geçerli bir e-posta girin." }, 400);
   if (password.length < 6) return jsonResp({ error: "Şifre en az 6 karakter olmalı." }, 400);
   if (!className || !code) return jsonResp({ error: "Sınıf adı/kodu girin (ör: 1B veya 1H)." }, 400);
@@ -87,11 +89,7 @@ Deno.serve(async (req) => {
       "Authorization": `Bearer ${serviceKey}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      email,
-      password,
-      email_confirm: true
-    })
+    body: JSON.stringify({ email, password, email_confirm: true })
   });
   const createData = await createResp.json().catch(() => ({}));
   if (!createResp.ok || !createData?.id) {
@@ -106,37 +104,53 @@ Deno.serve(async (req) => {
     "Prefer": "return=representation"
   };
 
+  // Öğretmen adını profiles tablosuna yaz
+  await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(createData.id)}`, {
+    method: "PATCH",
+    headers: adminHeaders,
+    body: JSON.stringify({ full_name: teacherName })
+  });
+
   // 2) Sınıf kodu zaten varsa yeni öğretmene ata; yoksa oluştur
   const findResp = await fetch(
-    `${supabaseUrl}/rest/v1/classes?code=eq.${encodeURIComponent(code)}&select=id,code,name,letter_count,teacher_id`,
+    `${supabaseUrl}/rest/v1/classes?code=eq.${encodeURIComponent(code)}&select=*`,
     { headers: adminHeaders }
   );
   const existing = findResp.ok ? (await findResp.json())?.[0] : null;
 
-  let clsResp: Response;
-  let action: "created" | "assigned";
-  if (existing?.id) {
-    action = "assigned";
-    clsResp = await fetch(`${supabaseUrl}/rest/v1/classes?id=eq.${encodeURIComponent(existing.id)}`, {
-      method: "PATCH",
-      headers: adminHeaders,
-      body: JSON.stringify({ teacher_id: createData.id, name: className })
-    });
-  } else {
-    action = "created";
-    clsResp = await fetch(`${supabaseUrl}/rest/v1/classes`, {
+  async function upsertClass(withTeacherName: boolean) {
+    if (existing?.id) {
+      const patchBody: Record<string, unknown> = { teacher_id: createData.id, name: className };
+      if (withTeacherName) patchBody.teacher_name = teacherName;
+      return fetch(`${supabaseUrl}/rest/v1/classes?id=eq.${encodeURIComponent(existing.id)}`, {
+        method: "PATCH",
+        headers: adminHeaders,
+        body: JSON.stringify(patchBody)
+      });
+    }
+    const postBody: Record<string, unknown> = {
+      name: className,
+      code,
+      teacher_id: createData.id,
+      letter_count: 6
+    };
+    if (withTeacherName) postBody.teacher_name = teacherName;
+    return fetch(`${supabaseUrl}/rest/v1/classes`, {
       method: "POST",
       headers: adminHeaders,
-      body: JSON.stringify({
-        name: className,
-        code,
-        teacher_id: createData.id,
-        letter_count: 6
-      })
+      body: JSON.stringify(postBody)
     });
   }
 
-  const clsData = await clsResp.json().catch(() => null);
+  const action = existing?.id ? "assigned" : "created";
+  let clsResp = await upsertClass(true);
+  let clsData = await clsResp.json().catch(() => null);
+  if (!clsResp.ok && /teacher_name/i.test(String(clsData?.message || ""))) {
+    // teacher_name sütunu henüz eklenmemişse onsuz tekrar dene
+    clsResp = await upsertClass(false);
+    clsData = await clsResp.json().catch(() => null);
+  }
+
   if (!clsResp.ok || !clsData?.[0]) {
     return jsonResp({
       error: (clsData?.message || "Öğretmen açıldı ama sınıf atanamadı.")
@@ -144,7 +158,7 @@ Deno.serve(async (req) => {
   }
 
   return jsonResp({
-    teacher: { id: createData.id, email: createData.email },
+    teacher: { id: createData.id, email: createData.email, name: teacherName },
     cls: clsData[0],
     action
   }, 200);
