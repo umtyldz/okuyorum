@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v22";
+const APP_VERSION = "v23";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -1500,15 +1500,22 @@ function renderScanReview() {
 
 async function handlePageFile(file) {
   if (!file) return;
-  const key = lsGet(LS.key);
-  if (!key) {
-    setScanState("❌ Sayfa taramak için üstteki bölüme Gemini API anahtarı girip kaydedin.");
-    return;
-  }
+  const localKey = lsGet(LS.key);
   setScanState("Fotoğraf hazırlanıyor ve okunuyor...");
   try {
     const b64 = await compressImageToJpeg(file);
-    const parsed = await scanPageWithGemini(key, b64);
+    let parsed;
+    try {
+      setScanState("Sayfa okunuyor...");
+      parsed = await cloudScanPage(b64);
+    } catch (cloudErr) {
+      // Edge Function yoksa veya hata verdiyse yerel Gemini anahtarı varsa ona düş
+      if (localKey) {
+        parsed = await scanPageWithGemini(localKey, b64);
+      } else {
+        throw cloudErr;
+      }
+    }
     const seen = new Set();
     const added = [];
     const pushParsed = (arr, kind) => {

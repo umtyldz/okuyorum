@@ -120,11 +120,19 @@ async function sbFetch(path, opts = {}) {
     headers["Authorization"] = `Bearer ${session.access_token}`;
   }
 
-  const resp = await fetch(`${SUPABASE_URL}${path}`, {
-    method: opts.method || "GET",
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
-  });
+  const ctrl = opts.timeoutMs ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), opts.timeoutMs) : null;
+  let resp;
+  try {
+    resp = await fetch(`${SUPABASE_URL}${path}`, {
+      method: opts.method || "GET",
+      headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal: ctrl ? ctrl.signal : undefined
+    });
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 
   if (resp.status === 401 && useAuth && session && !opts._retried) {
     const refreshed = await sbRefreshSession();
@@ -136,7 +144,7 @@ async function sbFetch(path, opts = {}) {
   const text = await resp.text();
   const data = text ? cloudParseJSON(text, null) : null;
   if (!resp.ok) {
-    const msg = (data && (data.message || data.error_description || data.hint)) || `HTTP ${resp.status}`;
+    const msg = (data && (data.error || data.message || data.error_description || data.hint)) || `HTTP ${resp.status}`;
     throw new Error(msg);
   }
   return data;
@@ -340,5 +348,16 @@ async function cloudRejectSuggestion(id) {
     method: "PATCH",
     requireAuth: true,
     body: { status: "rejected" }
+  });
+}
+
+/* ---------- 6) MERKEZİ SAYFA TARAMA (EDGE FUNCTION) ---------- */
+
+async function cloudScanPage(imageBase64) {
+  return sbFetch("/functions/v1/scan-page", {
+    method: "POST",
+    requireAuth: true,
+    timeoutMs: 30000,
+    body: { imageBase64 }
   });
 }
