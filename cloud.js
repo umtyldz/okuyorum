@@ -361,3 +361,12 @@ async function cloudScanPage(imageBase64) {
     body: { imageBase64 }
   });
 }
+
+async function cloudCreateTeacher(email, password, className) {
+  return sbFetch("/functions/v1/create-teacher", {
+    method: "POST",
+    requireAuth: true,
+    timeoutMs: 20000,
+    body: { email, password, className }
+  });
+}

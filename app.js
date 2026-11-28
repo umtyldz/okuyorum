@@ -12,7 +12,7 @@
 "use strict";
 
 /* ---------- 1) AYARLAR VE DURUM ---------- */
-const APP_VERSION = "v23";
+const APP_VERSION = "v24";
 const GEMINI_TIMEOUT_MS = 10000;
 const DISCOVER_TIMEOUT_MS = 8000;
 const GEMINI_MODELS = [
@@ -1844,6 +1844,36 @@ async function loadAdminQueue() {
 }
 
 $("refreshPendingBtn").onclick = loadAdminQueue;
+
+$("createTeacherBtn").onclick = async () => {
+  const email = $("newTeacherEmail").value.trim();
+  const pass = $("newTeacherPass").value;
+  const clsName = $("newTeacherClass").value.trim();
+  const st = $("createTeacherState");
+  if (!email || !pass || !clsName) {
+    st.textContent = "E-posta, şifre ve sınıf adını yazın.";
+    st.hidden = false;
+    return;
+  }
+  st.textContent = "Öğretmen ve sınıf oluşturuluyor...";
+  st.hidden = false;
+  $("createTeacherBtn").disabled = true;
+  try {
+    const res = await cloudCreateTeacher(email, pass, clsName);
+    $("newTeacherEmail").value = "";
+    $("newTeacherPass").value = "";
+    $("newTeacherClass").value = "";
+    const verb = res.action === "assigned" ? "atandı" : "oluşturuldu";
+    const link = classShareLink(res.cls.code);
+    st.textContent = `✅ ${res.teacher.email} için "${res.cls.name}" (kod: ${res.cls.code}) ${verb}. Link: ${link}`;
+    teacherClasses = await cloudListMyClasses(true);
+    renderTeacherClasses();
+  } catch (e) {
+    st.textContent = "❌ " + e.message;
+  } finally {
+    $("createTeacherBtn").disabled = false;
+  }
+};
 $("approveAllPendingBtn").onclick = async () => {
   if (!pendingItems.length) return;
   setAdminState("Tüm öneriler ortak havuza ekleniyor...");

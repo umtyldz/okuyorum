@@ -199,16 +199,34 @@
       </div>
     </section>
 
-    <!-- Yönetici onay kuyruğu -->
+    <!-- Yönetici alanı -->
     <section id="adminArea" class="parent-section" hidden>
-      <h3>👑 Yönetici: Ortak Havuz Onay Kuyruğu</h3>
-      <p>Öğretmenlerin sınıfına eklediği yeni kelime ve cümleleri inceleyip tek tıkla tüm sınıfların ortak havuzuna alabilirsiniz.</p>
-      <div class="row">
-        <button id="refreshPendingBtn" class="small" type="button">🔄 Yenile</button>
-        <button id="approveAllPendingBtn" class="small good-btn" type="button">✅ Tümünü ortak havuza al</button>
+      <h3>👑 Yönetici Paneli</h3>
+
+      <div class="sub-box">
+        <h4>👩‍🏫 Yeni öğretmen ve sınıf ekle</h4>
+        <p>Öğretmen hesabı ve sınıfı (ör. 1B, 1H) tek seferde açılır; sınıf zaten varsa yeni öğretmene atanır.</p>
+        <div class="stack-inputs">
+          <input id="newTeacherEmail" type="email" placeholder="ogretmen@okul.com" autocomplete="off">
+          <input id="newTeacherPass" type="password" placeholder="Şifre (en az 6 karakter)" autocomplete="new-password">
+          <input id="newTeacherClass" type="text" placeholder="Sınıf (ör: 1B veya 1H)" autocomplete="off" style="text-transform:uppercase">
+        </div>
+        <div class="row">
+          <button id="createTeacherBtn" class="small" type="button">+ Öğretmen & sınıf oluştur</button>
+        </div>
+        <div id="createTeacherState" class="key-state" hidden></div>
       </div>
-      <div id="adminState" class="key-state" hidden></div>
-      <div id="pendingList" class="scan-list"></div>
+
+      <div class="sub-box">
+        <h4>✅ Ortak Havuz Onay Kuyruğu</h4>
+        <p>Öğretmenlerin sınıfına eklediği yeni kelime ve cümleleri inceleyip tek tıkla tüm sınıfların ortak havuzuna alabilirsiniz.</p>
+        <div class="row">
+          <button id="refreshPendingBtn" class="small" type="button">🔄 Yenile</button>
+          <button id="approveAllPendingBtn" class="small good-btn" type="button">✅ Tümünü ortak havuza al</button>
+        </div>
+        <div id="adminState" class="key-state" hidden></div>
+        <div id="pendingList" class="scan-list"></div>
+      </div>
     </section>
   </details>
 
